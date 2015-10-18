@@ -4,7 +4,7 @@ Module that takes a 3d model and write it on
 obj files
 """
 
-include("larUtils.jl")
+require(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import LARUtils
 

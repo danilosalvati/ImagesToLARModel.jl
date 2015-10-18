@@ -72,7 +72,7 @@ This is the abstract (we will use LAR~\cite{cclar-proj:2013:00})
 Main module for the library. It starts conversion
 taking configuration parameters
 """
-require("imagesConvertion.jl")
+require(string(Pkg.dir("ImagesToLARModel/src"), "/imagesConvertion.jl"))
 
 import JSON
 import ImagesConvertion
@@ -140,10 +140,10 @@ end
 @O src/imagesConvertion.jl
 @{module ImagesConvertion
 
-require("generateBorderMatrix.jl")
-require("pngStack2Array3dJulia.jl")
-require("lar2Julia.jl")
-require("model2Obj.jl")
+require(string(Pkg.dir("ImagesToLARModel/src"), "/generateBorderMatrix.jl"))
+require(string(Pkg.dir("ImagesToLARModel/src"), "/pngStack2Array3dJulia.jl"))
+require(string(Pkg.dir("ImagesToLARModel/src"), "/lar2Julia.jl"))
+require(string(Pkg.dir("ImagesToLARModel/src"), "/model2Obj.jl"))
 
 import GenerateBorderMatrix
 import PngStack2Array3dJulia
@@ -382,7 +382,7 @@ end
 
 export computeOriented3Border, writeBorder, getOriented3BorderPath
 
-require("larUtils.jl")
+require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import LARUtils
 using PyCall
@@ -654,7 +654,7 @@ Module that takes a 3d model and write it on
 obj files
 """
 
-include("larUtils.jl")
+require(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import LARUtils
 

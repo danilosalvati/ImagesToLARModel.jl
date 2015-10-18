@@ -3,7 +3,7 @@ module ImagesToLARModel
 Main module for the library. It starts conversion
 taking configuration parameters
 """
-require("imagesConvertion.jl")
+require(string(Pkg.dir("ImagesToLARModel/src"), "/imagesConvertion.jl"))
 
 import JSON
 import ImagesConvertion

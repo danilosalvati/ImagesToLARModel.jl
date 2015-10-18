@@ -1,9 +1,9 @@
 module ImagesConvertion
 
-require("generateBorderMatrix.jl")
-require("pngStack2Array3dJulia.jl")
-require("lar2Julia.jl")
-require("model2Obj.jl")
+require(string(Pkg.dir("ImagesToLARModel/src"), "/generateBorderMatrix.jl"))
+require(string(Pkg.dir("ImagesToLARModel/src"), "/pngStack2Array3dJulia.jl"))
+require(string(Pkg.dir("ImagesToLARModel/src"), "/lar2Julia.jl"))
+require(string(Pkg.dir("ImagesToLARModel/src"), "/model2Obj.jl"))
 
 import GenerateBorderMatrix
 import PngStack2Array3dJulia

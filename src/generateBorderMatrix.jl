@@ -14,7 +14,7 @@ end
 
 export computeOriented3Border, writeBorder, getOriented3BorderPath
 
-require("larUtils.jl")
+require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import LARUtils
 using PyCall
