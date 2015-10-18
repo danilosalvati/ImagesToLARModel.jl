@@ -12,30 +12,50 @@ using Logging
 
 export convertImagesToLARModel
 
-function loadConfiguration()
+function loadConfiguration(configurationFile)
   """
   load parameters from JSON file
+  
+  configurationFile: Path of the configuration file
   """
 
-  # Border dimensions are the nearest powers of two of the image sizes
+  configuration = JSON.parse(configurationFile)
+  
+  DEBUG_LEVELS = [DEBUG, INFO, WARNING, ERROR, CRITICAL]
 
-  inputDirectory = "/home/danilo/Prova/IMAGES/" # Directory containing images
-  outputDirectory = "/home/danilo/Prova/OUTPUT/" # Directory containing output
-  bestImage = "slice.z.08.01_63.png" # Image chosen for centroids conputation
-  nx = 2 # Border x
-  ny = 2 # Border y
-  nz = 2 # Border z
-  DEBUG_LEVEL = DEBUG
+  return configuration["inputDirectory"], configuration["outputDirectory"], configuration["bestImage"],
+        configuration["nx"], configuration["ny"], configuration["nz"],
+        DEBUG_LEVELS[configuration["DEBUG_LEVEL"]]
 
-  return inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL
 end
 
-function convertImagesToLARModel()
+function convertImagesToLARModel(configurationFile)
   """
-  Start convertion
+  Start convertion of a stack of images into a 3D model
+  loading parameters from a JSON configuration file
+  
+  configurationFile: Path of the configuration file
   """
-  inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL = loadConfiguration()
+  inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL = loadConfiguration(open(configurationFile))
+  convertImagesToLARModel(inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL)
+end
 
+function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
+                                 nx, ny, nz, DEBUG_LEVEL = INFO)
+  """
+  Start convertion of a stack of images into a 3D model
+  
+  inputDirectory: Directory containing the stack of images
+  outputDirectory: Directory containing the output
+  bestImage: Image chosen for centroids computation
+  nx, ny, nz: Border dimensions (Possibly the biggest power of two of images dimensions)
+  DEBUG_LEVEL: Debug level for Julia logger. It can be one of the following:
+    - DEBUG
+    - INFO
+    - WARNING
+    - ERROR
+    - CRITICAL
+  """
   # Create output directory
   try
     mkpath(outputDirectory)

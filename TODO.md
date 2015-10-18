@@ -2,9 +2,9 @@
 
 ## ImagesTo3DModel
 
-- Implement JSON configuration
-
 ## PngStack2Array3dJulia
+
+- Actually if images dimensions are odd I remove one pixel; perhaps it would be better to add one instead
 
 ## LARUtils
 
