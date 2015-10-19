@@ -143,7 +143,13 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
       debug("theImage dimensions: ", size(theImage)[1], " ", size(theImage[1])[1], " ", size(theImage[1])[2])
 
       # Getting a slice of theImage array
-      image = Array(Uint8, (convert(Int32, length(theImage)), convert(Int32, xEnd - xStart), convert(Int32, yEnd - yStart)))
+      
+      # First check if we are on a 32 or 64 bit Julia system for getting the right type
+      if typeof(1) == Int32
+        image = Array(Uint8, (convert(Int32, length(theImage)), convert(Int32, xEnd - xStart), convert(Int32, yEnd - yStart)))
+      else
+        image = Array(Uint8, (convert(Int64, length(theImage)), convert(Int64, xEnd - xStart), convert(Int64, yEnd - yStart)))
+      end
       debug("image size: ", size(image))
       for z in 1:length(theImage)
         for x in 1 : (xEnd - xStart)
