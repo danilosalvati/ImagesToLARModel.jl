@@ -291,7 +291,8 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
 
       # Getting a slice of theImage array
       
-      image = Array(Uint8, (convert(Int, length(theImage)), convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))      debug("image size: ", size(image))
+      image = Array(Uint8, (convert(Int, length(theImage)), convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
+      debug("image size: ", size(image))
       for z in 1:length(theImage)
         for x in 1 : (xEnd - xStart)
           for y in 1 : (yEnd - yStart)
