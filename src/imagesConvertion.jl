@@ -93,20 +93,26 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
   endImage = beginImageStack
 
   info("Converting images into a 3d model")
+  tasks = Array(RemoteRef, 0)
   for zBlock in 0:(imageDepth / imageDz - 1)
     startImage = endImage
     endImage = startImage + imageDz
     info("StartImage = ", startImage)
     info("endImage = ", endImage)
-    info(string("Start process convertion process ", zBlock))
-    imageConvertionProcess(tempDirectory, outputDirectory,
+        
+    task = @spawn imageConvertionProcess(tempDirectory, outputDirectory,
                            beginImageStack, startImage, endImage,
                            imageDx, imageDy, imageDz,
                            imageHeight, imageWidth,
                            centroidsCalc, boundaryMat)
+    push!(tasks, task)
   end
 
-  # TODO: add something for waiting all processes
+  # Waiting for processes completion
+  for task in tasks
+    wait(task)
+  end
+  
   info("Merging obj models")
   Model2Obj.mergeObj(string(outputDirectory,"MODELS"))
 

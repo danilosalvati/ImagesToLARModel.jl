@@ -233,20 +233,26 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
   endImage = beginImageStack
 
   info("Converting images into a 3d model")
+  tasks = Array(RemoteRef, 0)
   for zBlock in 0:(imageDepth / imageDz - 1)
     startImage = endImage
     endImage = startImage + imageDz
     info("StartImage = ", startImage)
     info("endImage = ", endImage)
-    info(string("Start process convertion process ", zBlock))
-    imageConvertionProcess(tempDirectory, outputDirectory,
+        
+    task = @@spawn imageConvertionProcess(tempDirectory, outputDirectory,
                            beginImageStack, startImage, endImage,
                            imageDx, imageDy, imageDz,
                            imageHeight, imageWidth,
                            centroidsCalc, boundaryMat)
+    push!(tasks, task)
   end
 
-  # TODO: add something for waiting all processes
+  # Waiting for processes completion
+  for task in tasks
+    wait(task)
+  end
+  
   info("Merging obj models")
   Model2Obj.mergeObj(string(outputDirectory,"MODELS"))
 
@@ -286,9 +292,9 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
       
       # First check if we are on a 32 or 64 bit Julia system for getting the right type
       if typeof(1) == Int32
-	image = Array(Uint8, (convert(Int32, length(theImage)), convert(Int32, xEnd - xStart), convert(Int32, yEnd - yStart)))
+        image = Array(Uint8, (convert(Int32, length(theImage)), convert(Int32, xEnd - xStart), convert(Int32, yEnd - yStart)))
       else
-	image = Array(Uint8, (convert(Int64, length(theImage)), convert(Int64, xEnd - xStart), convert(Int64, yEnd - yStart)))
+        image = Array(Uint8, (convert(Int64, length(theImage)), convert(Int64, xEnd - xStart), convert(Int64, yEnd - yStart)))
       end
       debug("image size: ", size(image))
       for z in 1:length(theImage)
