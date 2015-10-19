@@ -33,9 +33,19 @@ function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory)
 
   numberOfClusters = 2 # Number of clusters for
                        # images segmentation
+  
+  info("Moving images into temp directory")
+  try
+    mkdir(string(outputDirectory, "TEMP"))
+  catch
+  end
 
-  imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(string(inputDirectory,bestImage))
-  imageDepth = length(readdir(inputDirectory))
+  tempDirectory = string(outputDirectory,"TEMP/")
+
+  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory, bestImage)
+
+  imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(string(tempDirectory,newBestImage))
+  imageDepth = length(readdir(tempDirectory))
 
   # Computing border matrix
   info("Computing border matrix")
@@ -47,7 +57,7 @@ function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory)
 
   # Starting images convertion and border computation
   info("Starting images convertion")
-  startImageConvertion(inputDirectory, bestImage, outputDirectory, borderFilename,
+  startImageConvertion(tempDirectory, newBestImage, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
                        numberOfClusters)
@@ -66,20 +76,11 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
   imageForCentroids: image chosen for centroid computation
   """
 
-  info("Moving images into temp directory")
-  try
-    mkdir(string(outputDirectory, "TEMP"))
-  catch
-  end
-
-  tempDirectory = string(outputDirectory,"TEMP/")
-
-  newBestImage = PngStack2Array3dJulia.convertImages(sliceDirectory, tempDirectory, bestImage)
 
   # Create clusters for image segmentation
   info("Computing image centroids")
   debug("Best image = ", bestImage)
-  centroidsCalc = PngStack2Array3dJulia.calculateClusterCentroids(tempDirectory, newBestImage, numberOfClusters)
+  centroidsCalc = PngStack2Array3dJulia.calculateClusterCentroids(sliceDirectory, bestImage, numberOfClusters)
   debug(string("centroids = ", centroidsCalc))
 
   try
@@ -100,7 +101,7 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
     info("StartImage = ", startImage)
     info("endImage = ", endImage)
         
-    task = @spawn imageConvertionProcess(tempDirectory, outputDirectory,
+    task = @spawn imageConvertionProcess(sliceDirectory, outputDirectory,
                            beginImageStack, startImage, endImage,
                            imageDx, imageDy, imageDz,
                            imageHeight, imageWidth,
@@ -232,5 +233,4 @@ function getBorderMatrix(borderFilename)
   return cscBoundaryMat
 
 end
-
 end

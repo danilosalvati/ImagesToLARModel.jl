@@ -1,6 +1,6 @@
 # TODOs
 
-## ImagesTo3DModel
+## ImagesToLARModel
 
 ## PngStack2Array3dJulia
 
@@ -14,8 +14,6 @@
 
 ## ImagesConvertion
 
-- IMPORTANT: Implement parallelism when generating models
-
 ## Lar2Julia
 
 - Convert all python functions inside larcc module into julia functions
@@ -24,6 +22,7 @@
 ## Model2Obj
 
 - When creating stl files we need all cubes or only "+1" oriented faces?
+- Final model creation is too slow; it needs to be parallelized
 
 ## Tests
 
