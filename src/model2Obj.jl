@@ -10,26 +10,28 @@ import LARUtils
 
 using Logging
 
-export writeToObj, mergeObj
+export writeToObj, mergeObj, computeModel
 
-function writeToObj(imageDx, imageDy, imageDz,
-                    xStart, yStart, zStart,
-                    objectBoundaryChain, outputFilename)
+function computeModel(imageDx, imageDy, imageDz,
+                      xStart, yStart, zStart,
+                      facesOffset, objectBoundaryChain)
   """
-  Takes the boundary chain of a part of the model
-  and writes it on stl files
+  Takes the boundary chain of a part of the entire model
+  and returns a LAR model
+  
+  imageDx, imageDy, imageDz: Boundary dimensions
+  xStart, yStart, zStart: Offset of this part of the model
+  facesOffset: Offset for the faces
+  objectBoundaryChain: Sparse csc matrix containing the cells
   """
+  
   V, bases = LARUtils.getBases(imageDx, imageDy, imageDz)
   FV = bases[3]
-
-  outputVtx = string(outputFilename, "_vtx.stl")
-  outputFaces = string(outputFilename, "_faces.stl")
-
-  fileVertex = open(outputVtx, "w")
-  fileFaces = open(outputFaces, "w")
+  
+  V_model = Array(Array{Int}, 0)
+  FV_model = Array(Array{Int}, 0)
 
   vertex_count = 1
-  count = 0
 
   #b2cells = Lar2Julia.cscChainToCellList(objectBoundaryChain)
   # Get all cells (independently from orientation)
@@ -40,34 +42,50 @@ function writeToObj(imageDx, imageDy, imageDz,
   for f in b2cells
     old_vertex_count = vertex_count
     for vtx in FV[f]
-      write(fileVertex, "v ")
-      write(fileVertex, string(convert(Int64, V[vtx + 1][1] + xStart)))
-      write(fileVertex, " ")
-      write(fileVertex, string(convert(Int64, V[vtx + 1][2] + yStart)))
-      write(fileVertex, " ")
-      write(fileVertex, string(convert(Int64, V[vtx + 1][3] + zStart)))
-      write(fileVertex, "\n")
+      push!(V_model, [convert(Int, V[vtx + 1][1] + xStart), 
+                    convert(Int64, V[vtx + 1][2] + yStart), 
+                    convert(Int64, V[vtx + 1][3] + zStart)])
       vertex_count += 1
     end
-
-    write(fileFaces, "f ")
-    write(fileFaces, string(old_vertex_count))
-    write(fileFaces, " ")
-    write(fileFaces, string(old_vertex_count + 1))
-    write(fileFaces, " ")
-    write(fileFaces, string(old_vertex_count + 3))
-    write(fileFaces, "\n")
-
-    write(fileFaces, "f ")
-    write(fileFaces, string(old_vertex_count))
-    write(fileFaces, " ")
-    write(fileFaces, string(old_vertex_count + 3))
-    write(fileFaces, " ")
-    write(fileFaces, string(old_vertex_count + 2))
-    write(fileFaces, "\n")
-
+    
+    push!(FV_model, [old_vertex_count + facesOffset, old_vertex_count + 1 + facesOffset, old_vertex_count + 3 + facesOffset])
+    push!(FV_model, [old_vertex_count + facesOffset, old_vertex_count + 3 + facesOffset, old_vertex_count + 2 + facesOffset])
   end
+  
+  return V_model, FV_model
+  
+end
 
+function writeToObj(V, FV, outputFilename)
+  """
+  Take a LAR model and write it on obj file
+  
+  V: array containing vertices coordinates
+  FV: array containing faces
+  outputFilename: prefix for the output files
+  """
+
+  outputVtx = string(outputFilename, "_vtx.stl")
+  outputFaces = string(outputFilename, "_faces.stl")
+
+  fileVertex = open(outputVtx, "w")
+  fileFaces = open(outputFaces, "w")
+  
+  for v in V
+    write(fileVertex, "v ")
+    write(fileVertex, string(v[1], " "))
+    write(fileVertex, string(v[2], " "))
+    write(fileVertex, string(v[3], "\n"))
+  end
+  
+  for f in FV
+    
+    write(fileFaces, "f ")
+    write(fileFaces, string(f[1], " "))
+    write(fileFaces, string(f[2], " "))
+    write(fileFaces, string(f[3], "\n"))
+  end
+  
   close(fileVertex)
   close(fileFaces)
 

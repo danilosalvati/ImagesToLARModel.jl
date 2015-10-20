@@ -107,13 +107,14 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
                            imageHeight, imageWidth,
                            centroidsCalc, boundaryMat)
     push!(tasks, task)
+    
   end
-
+  
   # Waiting for processes completion
   for task in tasks
     wait(task)
   end
-  
+
   info("Merging obj models")
   Model2Obj.mergeObj(string(outputDirectory,"MODELS"))
 
@@ -136,6 +137,11 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
   foreground = centroidsSorted[2]
   background = centroidsSorted[1]
   debug(string("background = ", background, " foreground = ", foreground))
+  
+  # V and FV contains vertices and faces of this part of model
+  V = Array(Array{Int}, 0)
+  FV = Array(Array{Int}, 0)
+  facesOffset = 0
   for xBlock in 0:(imageHeight / imageDx - 1)
     for yBlock in 0:(imageWidth / imageDy - 1)
       yStart = xBlock * imageDx
@@ -185,13 +191,17 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         catch
         end
         # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-        outputFilename = string(outputDirectory, "MODELS/model-", xBlock, "-", yBlock, "_output_", startImage, "_", endImage)
-        Model2Obj.writeToObj(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain, outputFilename)
+        V_part, FV_part = Model2Obj.computeModel(imageDx, imageDy, imageDz, yStart, xStart, zStart, facesOffset, objectBoundaryChain)
+        facesOffset += length(V_part)
+        append!(V, V_part)
+        append!(FV, FV_part)
       else
         debug("Model is empty")
       end
     end
   end
+  outputFilename = string(outputDirectory, "MODELS/model_output_", startImage, "_", endImage)
+  Model2Obj.writeToObj(V, FV, outputFilename)
 end
 
 function getBorderMatrix(borderFilename)
