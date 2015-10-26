@@ -419,7 +419,7 @@ function mergeObj(modelDirectory)
     faces_files = files[find(s -> contains(s,string("_faces.stl")), files)]
   
     # Merging files
-    mergeObjRec(vertices_files, faces_files)
+    mergeObjHelper(vertices_files, faces_files)
     
     files = readdir(modelDirectory)
     files = map((s) -> string(modelDirectory, "/", s), files)
