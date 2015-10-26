@@ -33,7 +33,7 @@ function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory)
 
   numberOfClusters = 2 # Number of clusters for
                        # images segmentation
-  
+
   info("Moving images into temp directory")
   try
     mkdir(string(outputDirectory, "TEMP"))
@@ -100,16 +100,16 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
     endImage = startImage + imageDz
     info("StartImage = ", startImage)
     info("endImage = ", endImage)
-        
+
     task = @spawn imageConvertionProcess(sliceDirectory, outputDirectory,
                            beginImageStack, startImage, endImage,
                            imageDx, imageDy, imageDz,
                            imageHeight, imageWidth,
                            centroidsCalc, boundaryMat)
     push!(tasks, task)
-    
+
   end
-  
+
   # Waiting for processes completion
   for task in tasks
     wait(task)
@@ -137,7 +137,7 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
   foreground = centroidsSorted[2]
   background = centroidsSorted[1]
   debug(string("background = ", background, " foreground = ", foreground))
-  
+
   # V and FV contains vertices and faces of this part of model
   V = Array(Array{Int}, 0)
   FV = Array(Array{Int}, 0)
@@ -156,7 +156,7 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
       debug("theImage dimensions: ", size(theImage)[1], " ", size(theImage[1])[1], " ", size(theImage[1])[2])
 
       # Getting a slice of theImage array
-      
+
       image = Array(Uint8, (convert(Int, length(theImage)), convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
       debug("image size: ", size(image))
       for z in 1:length(theImage)
