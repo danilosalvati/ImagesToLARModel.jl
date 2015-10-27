@@ -24,7 +24,7 @@ This is main module for converting a stack
 of images into a 3d model
 """
 
-function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory)
+function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory, parallelMerge)
   """
   Convert a stack of images into a 3d model
   """
@@ -60,7 +60,7 @@ function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory)
   startImageConvertion(tempDirectory, newBestImage, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
-                       numberOfClusters)
+                       numberOfClusters, parallelMerge)
 
 end
 
@@ -68,7 +68,7 @@ end
 function startImageConvertion(sliceDirectory, bestImage, outputDirectory, borderFilename,
                               imageHeight, imageWidth, imageDepth,
                               imageDx, imageDy, imageDz,
-                              numberOfClusters)
+                              numberOfClusters, parallelMerge)
   """
   Support function for converting a stack of images into a model
 
@@ -116,7 +116,11 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
   end
 
   info("Merging obj models")
-  Model2Obj.mergeObj(string(outputDirectory,"MODELS"))
+  if parallelMerge
+    Model2Obj.mergeObjParallel(string(outputDirectory,"MODELS"))
+  else
+    Model2Obj.mergeObj(string(outputDirectory,"MODELS"))
+  end
 
 end
 

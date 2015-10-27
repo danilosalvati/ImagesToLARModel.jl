@@ -4,7 +4,8 @@ Installation
 ------
 
     Pkg.clone("git://github.com/sadan91/ImagesToLARModel.jl.git")
-
+    
+    This module require also an installation of python with scipy and numpy
 
 Use
 ------
@@ -27,6 +28,7 @@ This is an example of a valid JSON configuration file:
       "ny": border x,
       "nz": border x,
       "DEBUG_LEVEL": julia Logging level
+      "parallelMerge": "true" or "false" 
     }
 
 These are the accepted parameters:
@@ -41,3 +43,8 @@ These are the accepted parameters:
     - WARNING (3 for JSON configuration file)
     - ERROR (4 for JSON configuration file)
     - CRITICAL (5 for JSON configuration file)
+- parallelMerge: Choose if you want to merge model files using a distribuite algorithm or not (experimental)
+
+Known issues
+------
+At the moment it seems that module cannot be loaded on Julia 0.4

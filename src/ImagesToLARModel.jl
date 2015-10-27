@@ -22,6 +22,16 @@ function loadConfiguration(configurationFile)
   configuration = JSON.parse(configurationFile)
   
   DEBUG_LEVELS = [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+  
+  try
+    if configuration["parallelMerge"] == "true"
+      parallelMerge = true
+    else
+      parallelMerge = false
+    end
+  catch
+    parallelMerge = false
+  end
 
   return configuration["inputDirectory"], configuration["outputDirectory"], configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
@@ -41,7 +51,7 @@ function convertImagesToLARModel(configurationFile)
 end
 
 function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
-                                 nx, ny, nz, DEBUG_LEVEL = INFO)
+                                 nx, ny, nz, DEBUG_LEVEL = INFO, parallelMerge = false)
   """
   Start convertion of a stack of images into a 3D model
   
@@ -63,6 +73,6 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
   end
 
   Logging.configure(level=DEBUG_LEVEL)
-  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory)
+  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory, parallelMerge)
 end
 end

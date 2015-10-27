@@ -91,6 +91,16 @@ function loadConfiguration(configurationFile)
   configuration = JSON.parse(configurationFile)
   
   DEBUG_LEVELS = [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+  
+  try
+    if configuration["parallelMerge"] == "true"
+      parallelMerge = true
+    else
+      parallelMerge = false
+    end
+  catch
+    parallelMerge = false
+  end
 
   return configuration["inputDirectory"], configuration["outputDirectory"], configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
@@ -110,7 +120,7 @@ function convertImagesToLARModel(configurationFile)
 end
 
 function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
-                                 nx, ny, nz, DEBUG_LEVEL = INFO)
+                                 nx, ny, nz, DEBUG_LEVEL = INFO, parallelMerge = false)
   """
   Start convertion of a stack of images into a 3D model
   
@@ -132,7 +142,7 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
   end
 
   Logging.configure(level=DEBUG_LEVEL)
-  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory)
+  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory, parallelMerge)
 end
 end
 @}
@@ -164,7 +174,7 @@ This is main module for converting a stack
 of images into a 3d model
 """
 
-function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory)
+function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory, parallelMerge)
   """
   Convert a stack of images into a 3d model
   """
@@ -200,7 +210,7 @@ function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory)
   startImageConvertion(tempDirectory, newBestImage, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
-                       numberOfClusters)
+                       numberOfClusters, parallelMerge)
 
 end
 
@@ -208,7 +218,7 @@ end
 function startImageConvertion(sliceDirectory, bestImage, outputDirectory, borderFilename,
                               imageHeight, imageWidth, imageDepth,
                               imageDx, imageDy, imageDz,
-                              numberOfClusters)
+                              numberOfClusters, parallelMerge)
   """
   Support function for converting a stack of images into a model
 
@@ -256,7 +266,11 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
   end
 
   info("Merging obj models")
-  Model2Obj.mergeObj(string(outputDirectory,"MODELS"))
+  if parallelMerge
+    Model2Obj.mergeObjParallel(string(outputDirectory,"MODELS"))
+  else
+    Model2Obj.mergeObj(string(outputDirectory,"MODELS"))
+  end
 
 end
 
@@ -677,7 +691,7 @@ import LARUtils
 
 using Logging
 
-export writeToObj, mergeObj, computeModel
+export writeToObj, mergeObj, computeModel, mergeObjParallel
 
 
 function lessThanVertices(v1, v2)
@@ -837,7 +851,7 @@ function writeToObj(V, FV, outputFilename)
 
 end
 
-function mergeObj_old(modelDirectory)
+function mergeObj(modelDirectory)
   """
   Merge stl files in a single obj file
 
@@ -890,11 +904,11 @@ function mergeObj_old(modelDirectory)
 
   # Removing all tmp files
   for vtx_file in vertices_files
-    #rm(string(modelDirectory, "/", vtx_file))
+    rm(string(modelDirectory, "/", vtx_file))
   end
 
   for fcs_file in faces_files
-    #rm(string(modelDirectory, "/", fcs_file))
+    rm(string(modelDirectory, "/", fcs_file))
   end
 
 end
@@ -1065,12 +1079,15 @@ function mergeObjHelper(vertices_files, faces_files)
 
 end
 
-function mergeObj(modelDirectory)
+function mergeObjParallel(modelDirectory)
   """
   Merge stl files in a single obj file using a parallel
   approach. Files will be recursively merged two by two
   generating a tree where number of processes for every
   step is maximized
+  Actually use of this function is discouraged. In fact
+  speedup is influenced by disk speed. It could work on
+  particular systems with parallel accesses on disks
 
   modelDirectory: directory containing models
   """

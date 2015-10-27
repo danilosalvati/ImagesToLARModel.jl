@@ -10,7 +10,7 @@ import LARUtils
 
 using Logging
 
-export writeToObj, mergeObj, computeModel
+export writeToObj, mergeObj, computeModel, mergeObjParallel
 
 
 function lessThanVertices(v1, v2)
@@ -170,7 +170,7 @@ function writeToObj(V, FV, outputFilename)
 
 end
 
-function mergeObj_old(modelDirectory)
+function mergeObj(modelDirectory)
   """
   Merge stl files in a single obj file
 
@@ -223,11 +223,11 @@ function mergeObj_old(modelDirectory)
 
   # Removing all tmp files
   for vtx_file in vertices_files
-    #rm(string(modelDirectory, "/", vtx_file))
+    rm(string(modelDirectory, "/", vtx_file))
   end
 
   for fcs_file in faces_files
-    #rm(string(modelDirectory, "/", fcs_file))
+    rm(string(modelDirectory, "/", fcs_file))
   end
 
 end
@@ -398,12 +398,15 @@ function mergeObjHelper(vertices_files, faces_files)
 
 end
 
-function mergeObj(modelDirectory)
+function mergeObjParallel(modelDirectory)
   """
   Merge stl files in a single obj file using a parallel
   approach. Files will be recursively merged two by two
   generating a tree where number of processes for every
   step is maximized
+  Actually use of this function is discouraged. In fact
+  speedup is influenced by disk speed. It could work on
+  particular systems with parallel accesses on disks
 
   modelDirectory: directory containing models
   """
