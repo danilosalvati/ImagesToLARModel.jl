@@ -16,7 +16,7 @@ Use
  or:
  
     using(ImagesToLARModel)
-    convertImagesToLARModel(<Input directory>, <Output directory>, <BestImage>, <Border x>, <Border y>, <Border z>[, <DEBUG_LEVEL>])
+    convertImagesToLARModel(<Input directory>, <Output directory>, <BestImage>, <Border x>, <Border y>, <Border z>[, <DEBUG_LEVEL>, <parallelMerge>])
 
 This is an example of a valid JSON configuration file:
 
