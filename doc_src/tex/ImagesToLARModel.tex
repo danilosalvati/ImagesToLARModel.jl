@@ -154,11 +154,13 @@ require(string(Pkg.dir("ImagesToLARModel/src"), "/generateBorderMatrix.jl"))
 require(string(Pkg.dir("ImagesToLARModel/src"), "/pngStack2Array3dJulia.jl"))
 require(string(Pkg.dir("ImagesToLARModel/src"), "/lar2Julia.jl"))
 require(string(Pkg.dir("ImagesToLARModel/src"), "/model2Obj.jl"))
+require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import GenerateBorderMatrix
 import PngStack2Array3dJulia
 import Lar2Julia
 import Model2Obj
+import LARUtils
 
 import JSON
 
@@ -350,8 +352,8 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         catch
         end
         # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-        V, FV = Model2Obj.computeModel(imageDx, imageDy, imageDz, yStart, xStart, zStart, 0, objectBoundaryChain)
-        V, FV = Model2Obj.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
+        #V, FV = LARUtils.computeModel(imageDx, imageDy, imageDz, yStart, xStart, zStart, 0, objectBoundaryChain)
+        V, FV = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
         #models = Model2Obj.splitBoundaries(V, FV, yStart, xStart, zStart, nx, ny, nz)
         outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V, FV, outputFilename)
@@ -579,7 +581,10 @@ end
 """
 Utility functions for extracting 3d models from images
 """
-export ind, invertIndex, getBases
+
+using Logging
+
+export ind, invertIndex, getBases, removeDoubleVerticesAndFaces, computeModel, computeModelAndBoundaries
 
 function ind(x, y, z, nx, ny)
     """
@@ -678,25 +683,6 @@ function getBases(nx, ny, nz)
   # return all basis
   return V, (VV, EV, FV, CV)
 end
-end
-@}
-
-
-@O src/model2Obj.jl
-@{module Model2Obj
-"""
-Module that takes a 3d model and write it on
-obj files
-"""
-
-require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
-
-import LARUtils
-
-using Logging
-
-export writeToObj, mergeObj, computeModel, mergeObjParallel, splitBoundaries
-
 
 function lessThanVertices(v1, v2)
   """
@@ -788,7 +774,7 @@ function computeModel(imageDx, imageDy, imageDz,
   objectBoundaryChain: Sparse csc matrix containing the cells
   """
 
-  V, bases = LARUtils.getBases(imageDx, imageDy, imageDz)
+  V, bases = getBases(imageDx, imageDy, imageDz)
   FV = bases[3]
 
   V_model = Array(Array{Int}, 0)
@@ -819,7 +805,6 @@ function computeModel(imageDx, imageDy, imageDz,
   return removeDoubleVerticesAndFaces(V_model, FV_model, facesOffset)
 
 end
-
 
 function isOnLeft(face, V, nx, ny, nz)
   """
@@ -987,7 +972,7 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
     return new_vertex_count
   end
 
-  V, bases = LARUtils.getBases(imageDx, imageDy, imageDz)
+  V, bases = getBases(imageDx, imageDy, imageDz)
   FV = bases[3]
 
   V_model = Array(Array{Int}, 0)
@@ -1055,8 +1040,26 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
 
   # Removing double vertices
   return removeDoubleVerticesAndFaces(V_back, FV_back, 0)
-
 end
+end
+@}
+
+
+@O src/model2Obj.jl
+@{module Model2Obj
+"""
+Module that takes a 3d model and write it on
+obj files
+"""
+
+require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
+
+import LARUtils
+
+using Logging
+
+export writeToObj, mergeObj, mergeObjParallel
+
 
 function writeToObj(V, FV, outputFilename)
   """
@@ -1278,7 +1281,7 @@ function mergeObjHelper(vertices_files, faces_files)
   numberOfVertices = Array(Int, 0)
   tasks = Array(RemoteRef, 0)
   for i in 1 : length(taskArray) - 1
-    task = @spawn mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)])
+    task = @@spawn mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
     #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)]))
   end

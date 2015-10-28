@@ -4,11 +4,13 @@ require(string(Pkg.dir("ImagesToLARModel/src"), "/generateBorderMatrix.jl"))
 require(string(Pkg.dir("ImagesToLARModel/src"), "/pngStack2Array3dJulia.jl"))
 require(string(Pkg.dir("ImagesToLARModel/src"), "/lar2Julia.jl"))
 require(string(Pkg.dir("ImagesToLARModel/src"), "/model2Obj.jl"))
+require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import GenerateBorderMatrix
 import PngStack2Array3dJulia
 import Lar2Julia
 import Model2Obj
+import LARUtils
 
 import JSON
 
@@ -200,8 +202,8 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         catch
         end
         # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-        V, FV = Model2Obj.computeModel(imageDx, imageDy, imageDz, yStart, xStart, zStart, 0, objectBoundaryChain)
-        V, FV = Model2Obj.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
+        #V, FV = LARUtils.computeModel(imageDx, imageDy, imageDz, yStart, xStart, zStart, 0, objectBoundaryChain)
+        V, FV = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
         #models = Model2Obj.splitBoundaries(V, FV, yStart, xStart, zStart, nx, ny, nz)
         outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V, FV, outputFilename)
