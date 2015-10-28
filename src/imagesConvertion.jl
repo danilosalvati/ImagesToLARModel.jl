@@ -101,12 +101,21 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
     info("StartImage = ", startImage)
     info("endImage = ", endImage)
 
+    #=
     task = @spawn imageConvertionProcess(sliceDirectory, outputDirectory,
                            beginImageStack, startImage, endImage,
                            imageDx, imageDy, imageDz,
                            imageHeight, imageWidth,
                            centroidsCalc, boundaryMat)
+    
     push!(tasks, task)
+    =#
+    imageConvertionProcess(sliceDirectory, outputDirectory,
+                           beginImageStack, startImage, endImage,
+                           imageDx, imageDy, imageDz,
+                           imageHeight, imageWidth,
+                           centroidsCalc, boundaryMat)
+
 
   end
 
@@ -192,6 +201,8 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         end
         # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
         V, FV = Model2Obj.computeModel(imageDx, imageDy, imageDz, yStart, xStart, zStart, 0, objectBoundaryChain)
+        V, FV = Model2Obj.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
+        #models = Model2Obj.splitBoundaries(V, FV, yStart, xStart, zStart, nx, ny, nz)
         outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V, FV, outputFilename)
       else

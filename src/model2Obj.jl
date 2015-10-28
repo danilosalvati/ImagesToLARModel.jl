@@ -10,7 +10,7 @@ import LARUtils
 
 using Logging
 
-export writeToObj, mergeObj, computeModel, mergeObjParallel
+export writeToObj, mergeObj, computeModel, mergeObjParallel, splitBoundaries
 
 
 function lessThanVertices(v1, v2)
@@ -121,8 +121,8 @@ function computeModel(imageDx, imageDy, imageDz,
     old_vertex_count = vertex_count
     for vtx in FV[f]
       push!(V_model, [convert(Int, V[vtx + 1][1] + xStart),
-                    convert(Int64, V[vtx + 1][2] + yStart),
-                    convert(Int64, V[vtx + 1][3] + zStart)])
+                    convert(Int, V[vtx + 1][2] + yStart),
+                    convert(Int, V[vtx + 1][3] + zStart)])
       vertex_count += 1
     end
 
@@ -132,6 +132,244 @@ function computeModel(imageDx, imageDy, imageDz,
 
   # Removing double vertices
   return removeDoubleVerticesAndFaces(V_model, FV_model, facesOffset)
+
+end
+
+
+function isOnLeft(face, V, nx, ny, nz)
+  """
+  Check if face is on left boundary
+  """
+
+  # Computing vertices on left boundary
+  leftVertices = Array(Array{Int}, 0)
+  for x in 0 : nx
+    for z in 0 : nz
+      push!(leftVertices, [x, 0, z])
+    end
+  end
+
+  for(vtx in face)
+    if(!in(V[vtx + 1], leftVertices))
+      return false
+    end
+  end
+  return true
+
+end
+
+function isOnRight(face, V, nx, ny, nz)
+  """
+  Check if face is on right boundary
+  """
+
+  # Computing vertices on right boundary
+  rightVertices = Array(Array{Int}, 0)
+  for x in 0 : nx
+    for z in 0 : nz
+      push!(rightVertices, [x, 1, z])
+    end
+  end
+
+  for(vtx in face)
+    if(!in(V[vtx + 1], rightVertices))
+      return false
+    end
+  end
+  return true
+
+end
+
+function isOnTop(face, V, nx, ny, nz)
+  """
+  Check if face is on top boundary
+  """
+
+  # Computing vertices on top boundary
+  topVertices = Array(Array{Int}, 0)
+  for x in 0 : nx
+    for y in 0 : ny
+      push!(topVertices, [x, y, 1])
+    end
+  end
+
+  for(vtx in face)
+    if(!in(V[vtx + 1], topVertices))
+      return false
+    end
+  end
+  return true
+
+end
+
+function isOnBottom(face, V, nx, ny, nz)
+  """
+  Check if face is on bottom boundary
+  """
+
+  # Computing vertices on bottom boundary
+  bottomVertices = Array(Array{Int}, 0)
+  for x in 0 : nx
+    for y in 0 : ny
+      push!(bottomVertices, [x, y, 0])
+    end
+  end
+
+  for(vtx in face)
+    if(!in(V[vtx + 1], bottomVertices))
+      return false
+    end
+  end
+  return true
+
+end
+
+function isOnFront(face, V, nx, ny, nz)
+  """
+  Check if face is on front boundary
+  """
+
+  # Computing vertices on front boundary
+  frontVertices = Array(Array{Int}, 0)
+  for y in 0 : ny
+    for z in 0 : nz
+      push!(frontVertices, [1, y, z])
+    end
+  end
+
+  for(vtx in face)
+    if(!in(V[vtx + 1], frontVertices))
+      return false
+    end
+  end
+  return true
+
+end
+
+function isOnBack(face, V, nx, ny, nz)
+  """
+  Check if face is on back boundary
+  """
+
+  # Computing vertices on back boundary
+  backVertices = Array(Array{Int}, 0)
+  for y in 0 : ny
+    for z in 0 : ny
+      push!(backVertices, [0, y, z])
+    end
+  end
+
+  for(vtx in face)
+    if(!in(V[vtx + 1], backVertices))
+      return false
+    end
+  end
+  return true
+
+end
+
+function computeModelAndBoundaries(imageDx, imageDy, imageDz,
+                      xStart, yStart, zStart,
+                      objectBoundaryChain)
+  """
+  Takes the boundary chain of a part of the entire model
+  and returns a LAR model splitting the boundaries
+
+  imageDx, imageDy, imageDz: Boundary dimensions
+  xStart, yStart, zStart: Offset of this part of the model
+  objectBoundaryChain: Sparse csc matrix containing the cells
+  """
+
+  function addFaceToModel(V_base, FV_base, V, FV, face, vertex_count)
+    """
+    Insert a face into a LAR model
+
+    V_base, FV_base: LAR model of the base
+    V, FV: LAR model
+    face: Face that will be added to the model
+    vertex_count: Indices for faces vertices
+    """
+    new_vertex_count = vertex_count
+    for vtx in FV_base[face]
+      push!(V, [convert(Int, V_base[vtx + 1][1] + xStart),
+                      convert(Int, V_base[vtx + 1][2] + yStart),
+                      convert(Int, V_base[vtx + 1][3] + zStart)])
+      new_vertex_count += 1
+    end
+    push!(FV, [vertex_count, vertex_count + 1, vertex_count + 3])
+    push!(FV, [vertex_count, vertex_count + 3, vertex_count + 2])
+
+    return new_vertex_count
+  end
+
+  V, bases = LARUtils.getBases(imageDx, imageDy, imageDz)
+  FV = bases[3]
+
+  V_model = Array(Array{Int}, 0)
+  FV_model = Array(Array{Int}, 0)
+
+  V_left = Array(Array{Int},0)
+  FV_left = Array(Array{Int},0)
+
+  V_right = Array(Array{Int},0)
+  FV_right = Array(Array{Int},0)
+
+  V_top = Array(Array{Int},0)
+  FV_top = Array(Array{Int},0)
+
+  V_bottom = Array(Array{Int},0)
+  FV_bottom = Array(Array{Int},0)
+
+  V_front = Array(Array{Int},0)
+  FV_front = Array(Array{Int},0)
+
+  V_back = Array(Array{Int},0)
+  FV_back = Array(Array{Int},0)
+
+  vertex_count_model = 1
+  vertex_count_left = 1
+  vertex_count_right = 1
+  vertex_count_top = 1
+  vertex_count_bottom = 1
+  vertex_count_front = 1
+  vertex_count_back = 1
+
+  #b2cells = Lar2Julia.cscChainToCellList(objectBoundaryChain)
+  # Get all cells (independently from orientation)
+  b2cells = findn(objectBoundaryChain)[1]
+
+  debug("b2cells = ", b2cells)
+
+  for f in b2cells
+    old_vertex_count_model = vertex_count_model
+    old_vertex_count_left = vertex_count_left
+    old_vertex_count_right = vertex_count_right
+    old_vertex_count_top = vertex_count_top
+    old_vertex_count_bottom = vertex_count_bottom
+    old_vertex_count_front = vertex_count_front
+    old_vertex_count_back = vertex_count_back
+
+    # Choosing the right model for vertex
+    if(isOnLeft(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_left = addFaceToModel(V, FV, V_left, FV_left, f, old_vertex_count_left)
+    elseif(isOnRight(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_right = addFaceToModel(V, FV, V_right, FV_right, f, old_vertex_count_right)
+    elseif(isOnTop(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_top = addFaceToModel(V, FV, V_top, FV_top, f, old_vertex_count_top)
+    elseif(isOnBottom(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_bottom = addFaceToModel(V, FV, V_bottom, FV_bottom, f, old_vertex_count_bottom)
+    elseif(isOnFront(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_front = addFaceToModel(V, FV, V_front, FV_front, f, old_vertex_count_front)
+    elseif(isOnBack(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_back = addFaceToModel(V, FV, V_back, FV_back, f, old_vertex_count_back)
+    else
+      vertex_count_model = addFaceToModel(V, FV, V_model, FV_model, f, old_vertex_count_model)
+    end
+
+  end
+
+  # Removing double vertices
+  return removeDoubleVerticesAndFaces(V_back, FV_back, 0)
 
 end
 
@@ -223,11 +461,11 @@ function mergeObj(modelDirectory)
 
   # Removing all tmp files
   for vtx_file in vertices_files
-    rm(string(modelDirectory, "/", vtx_file))
+    #rm(string(modelDirectory, "/", vtx_file))
   end
 
   for fcs_file in faces_files
-    rm(string(modelDirectory, "/", fcs_file))
+    #rm(string(modelDirectory, "/", fcs_file))
   end
 
 end
@@ -266,7 +504,7 @@ function mergeVerticesFiles(file1, file2, startOffset)
   """
 
   f1 = open(file1, "a")
-  
+
   f2 = open(file2)
   debug("Merging ", file2)
   number_of_vertices = startOffset
@@ -343,47 +581,47 @@ function mergeObjHelper(vertices_files, faces_files)
   """
   Support function for mergeObj. It takes vertices and faces files
   and execute a single merging step
-  
+
   vertices_files: Array containing vertices files
   faces_files: Array containing faces files
   """
   numberOfImages = length(vertices_files)
   taskArray = Array(Int, 0)
   assignTasks(1, numberOfImages, taskArray)
-  
+
   # Now taskArray contains first files to merge
   numberOfVertices = Array(Int, 0)
   tasks = Array(RemoteRef, 0)
   for i in 1 : length(taskArray) - 1
-    task = @spawn mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)])
+    task = pawn mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
     #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)]))
   end
-  
+
   # Merging last vertices files
   task = @spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
   push!(tasks, task)
   #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end]))
-  
-  
+
+
   for task in tasks
     append!(numberOfVertices, fetch(task))
   end
-  
+
   debug("NumberOfVertices = ", numberOfVertices)
 
   # Merging faces files
   tasks = Array(RemoteRef, 0)
   for i in 1 : length(taskArray) - 1
-    
-    task = @spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
+
+    task = pawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
                                     numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
-    
+
     #mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
     #                  numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
   end
-  
+
   #Merging last faces files
   task = @spawn mergeObjProcesses(faces_files[taskArray[length(taskArray)] : end],
                                   numberOfVertices[taskArray[length(taskArray)] : end])
@@ -391,7 +629,7 @@ function mergeObjHelper(vertices_files, faces_files)
   push!(tasks, task)
   #mergeObjProcesses(faces_files[taskArray[length(taskArray)] : end],
   #                    numberOfVertices[taskArray[length(taskArray)] : end])
-  
+
   for task in tasks
     wait(task)
   end
@@ -412,22 +650,22 @@ function mergeObjParallel(modelDirectory)
   """
 
   files = readdir(modelDirectory)
-  
+
   # Appending directory path to every file
   files = map((s) -> string(modelDirectory, "/", s), files)
-  
+
   # While we have more than one vtx file and one faces file
   while(length(files) != 2)
     vertices_files = files[find(s -> contains(s,string("_vtx.stl")), files)]
     faces_files = files[find(s -> contains(s,string("_faces.stl")), files)]
-  
+
     # Merging files
     mergeObjHelper(vertices_files, faces_files)
-    
+
     files = readdir(modelDirectory)
     files = map((s) -> string(modelDirectory, "/", s), files)
   end
-  
+
   mergeVerticesFiles(files[2], files[1], 0)
   mv(files[2], string(modelDirectory, "/model.obj"))
   rm(files[1])

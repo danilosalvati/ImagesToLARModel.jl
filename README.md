@@ -5,7 +5,7 @@ Installation
 
     Pkg.clone("git://github.com/sadan91/ImagesToLARModel.jl.git")
     
-    This module require also an installation of python with scipy and numpy
+This module require an installation of python with scipy and numpy
 
 Use
 ------
