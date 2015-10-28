@@ -51,7 +51,6 @@ function getBases(nx, ny, nz)
     end
   end
 
-
   # Building CV relationship
   CV = Array{Int64}[]
   for z in 0:nz-1
@@ -194,7 +193,7 @@ function computeModel(imageDx, imageDy, imageDz,
   facesOffset: Offset for the faces
   objectBoundaryChain: Sparse csc matrix containing the cells
   """
-
+  
   V, bases = getBases(imageDx, imageDy, imageDz)
   FV = bases[3]
 
@@ -231,22 +230,14 @@ function isOnLeft(face, V, nx, ny, nz)
   """
   Check if face is on left boundary
   """
-
-  # Computing vertices on left boundary
-  leftVertices = Array(Array{Int}, 0)
-  for x in 0 : nx
-    for z in 0 : nz
-      push!(leftVertices, [x, 0, z])
-    end
-  end
-
+  
   for(vtx in face)
-    if(!in(V[vtx + 1], leftVertices))
+    if(V[vtx + 1][2] != 0)
       return false
     end
   end
   return true
-
+  
 end
 
 function isOnRight(face, V, nx, ny, nz)
@@ -254,16 +245,9 @@ function isOnRight(face, V, nx, ny, nz)
   Check if face is on right boundary
   """
 
-  # Computing vertices on right boundary
-  rightVertices = Array(Array{Int}, 0)
-  for x in 0 : nx
-    for z in 0 : nz
-      push!(rightVertices, [x, 1, z])
-    end
-  end
-
+  
   for(vtx in face)
-    if(!in(V[vtx + 1], rightVertices))
+    if(V[vtx + 1][2] != ny)
       return false
     end
   end
@@ -275,22 +259,13 @@ function isOnTop(face, V, nx, ny, nz)
   """
   Check if face is on top boundary
   """
-
-  # Computing vertices on top boundary
-  topVertices = Array(Array{Int}, 0)
-  for x in 0 : nx
-    for y in 0 : ny
-      push!(topVertices, [x, y, 1])
-    end
-  end
-
+  
   for(vtx in face)
-    if(!in(V[vtx + 1], topVertices))
+    if(V[vtx + 1][3] != nz)
       return false
     end
   end
   return true
-
 end
 
 function isOnBottom(face, V, nx, ny, nz)
@@ -298,21 +273,12 @@ function isOnBottom(face, V, nx, ny, nz)
   Check if face is on bottom boundary
   """
 
-  # Computing vertices on bottom boundary
-  bottomVertices = Array(Array{Int}, 0)
-  for x in 0 : nx
-    for y in 0 : ny
-      push!(bottomVertices, [x, y, 0])
-    end
-  end
-
   for(vtx in face)
-    if(!in(V[vtx + 1], bottomVertices))
+    if(V[vtx + 1][3] != 0)
       return false
     end
   end
   return true
-
 end
 
 function isOnFront(face, V, nx, ny, nz)
@@ -320,21 +286,12 @@ function isOnFront(face, V, nx, ny, nz)
   Check if face is on front boundary
   """
 
-  # Computing vertices on front boundary
-  frontVertices = Array(Array{Int}, 0)
-  for y in 0 : ny
-    for z in 0 : nz
-      push!(frontVertices, [1, y, z])
-    end
-  end
-
   for(vtx in face)
-    if(!in(V[vtx + 1], frontVertices))
+    if(V[vtx + 1][1] != nx)
       return false
     end
   end
-  return true
-
+  return true  
 end
 
 function isOnBack(face, V, nx, ny, nz)
@@ -342,21 +299,12 @@ function isOnBack(face, V, nx, ny, nz)
   Check if face is on back boundary
   """
 
-  # Computing vertices on back boundary
-  backVertices = Array(Array{Int}, 0)
-  for y in 0 : ny
-    for z in 0 : ny
-      push!(backVertices, [0, y, z])
-    end
-  end
-
   for(vtx in face)
-    if(!in(V[vtx + 1], backVertices))
+    if(V[vtx + 1][1] != 0)
       return false
     end
   end
-  return true
-
+  return true  
 end
 
 function computeModelAndBoundaries(imageDx, imageDy, imageDz,
@@ -460,6 +408,6 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
   end
 
   # Removing double vertices
-  return removeDoubleVerticesAndFaces(V_back, FV_back, 0)
+  return removeDoubleVerticesAndFaces(V_model, FV_model, 0)
 end
 end
