@@ -16,7 +16,7 @@
 
 ## GenerateBorderMatrix
 
-- Border Matrix Generation needs to be parallelized
+- Border Matrix Generation should be parallelized
 
 ## ImagesConvertion
 

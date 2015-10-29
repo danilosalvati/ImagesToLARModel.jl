@@ -688,13 +688,13 @@ function lessThanVertices(v1, v2)
   Utility function for comparing vertices coordinates
   """
 
-  if v1[1] == v2[2]
+  if v1[1] == v2[1]
     if v1[2] == v2[2]
       return v1[3] < v2[3]
     end
     return v1[2] < v2[2]
   end
-  return v1[1] < v2[2]
+  return v1[1] < v2[1]
 end
 
 function removeDoubleVerticesAndFaces(V, FV, facesOffset)
