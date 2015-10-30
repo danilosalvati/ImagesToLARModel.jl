@@ -413,7 +413,7 @@ function mergeBoundaries(modelDirectory,
 
         # Merging top boundary
         firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 1)
+        secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
         mergeAndRemoveDuplicates(firstPath, secondPath)
 
         # Merging front boundary

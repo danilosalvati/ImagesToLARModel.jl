@@ -774,7 +774,7 @@ end
 
 function reindexVerticesInFaces(FV, indices, offset)
   """
-  Reindex vertices indexes in faces array
+  Reindex vertices indices in faces array
 
   FV: Faces array of the LAR model
   indices: new Indices for faces
@@ -793,10 +793,10 @@ function removeVerticesAndFacesFromBoundaries(V, FV)
   """
   Remove vertices and faces duplicates on
   boundaries models
-  
+
   V,FV: lar model of two merged boundaries
   """
-  
+
   # Removing double faces and vertices
   newV, indices = removeDoubleVertices(V)
   uniqueIndices = unique(indices)
@@ -1501,7 +1501,7 @@ function mergeBoundaries(modelDirectory,
 
         # Merging top boundary
         firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 1)
+        secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
         mergeAndRemoveDuplicates(firstPath, secondPath)
 
         # Merging front boundary
