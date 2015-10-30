@@ -216,7 +216,6 @@ function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory,
 
 end
 
-
 function startImageConvertion(sliceDirectory, bestImage, outputDirectory, borderFilename,
                               imageHeight, imageWidth, imageDepth,
                               imageDx, imageDy, imageDz,
@@ -227,7 +226,6 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
   sliceDirectory: directory containing the image stack
   imageForCentroids: image chosen for centroid computation
   """
-
 
   # Create clusters for image segmentation
   info("Computing image centroids")
@@ -259,7 +257,7 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
                            imageDx, imageDy, imageDz,
                            imageHeight, imageWidth,
                            centroidsCalc, boundaryMat)
-    
+
     push!(tasks, task)
     =#
     imageConvertionProcess(sliceDirectory, outputDirectory,
@@ -268,19 +266,24 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
                            imageHeight, imageWidth,
                            centroidsCalc, boundaryMat)
 
-
   end
 
-  # Waiting for processes completion
+  # Waiting for tasks completion
   for task in tasks
     wait(task)
   end
 
+  info("Merging boundaries")
+  # Merge Boundaries files
+  Model2Obj.mergeBoundaries(string(outputDirectory, "MODELS"),
+                            imageHeight, imageWidth, imageDepth,
+                            imageDx, imageDy, imageDz)
+
   info("Merging obj models")
   if parallelMerge
-    Model2Obj.mergeObjParallel(string(outputDirectory,"MODELS"))
+    Model2Obj.mergeObjParallel(string(outputDirectory, "MODELS"))
   else
-    Model2Obj.mergeObj(string(outputDirectory,"MODELS"))
+    Model2Obj.mergeObj(string(outputDirectory, "MODELS"))
   end
 
 end
@@ -352,11 +355,37 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         catch
         end
         # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-        #V, FV = LARUtils.computeModel(imageDx, imageDy, imageDz, yStart, xStart, zStart, 0, objectBoundaryChain)
-        V, FV = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
-        #models = Model2Obj.splitBoundaries(V, FV, yStart, xStart, zStart, nx, ny, nz)
-        outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V, FV, outputFilename)
+        models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
+
+        V, FV = models[1][1] # inside model
+        V_left, FV_left = models[2][1]
+        V_right, FV_right = models[3][1] # right boundary
+        V_top, FV_top = models[4][1] # top boundary
+        V_bottom, FV_bottom = models[5][1] # bottom boundary
+        V_front, FV_front = models[6][1] # front boundary
+        V_back, FV_back = models[7][1] # back boundary
+
+        # Writing all models on disk
+        model_outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V, FV, model_outputFilename)
+
+        left_outputFilename = string(outputDirectory, "MODELS/left_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_left, FV_left, left_outputFilename)
+
+        right_outputFilename = string(outputDirectory, "MODELS/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_right, FV_right, right_outputFilename)
+
+        top_outputFilename = string(outputDirectory, "MODELS/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_top, FV_top, top_outputFilename)
+
+        bottom_outputFilename = string(outputDirectory, "MODELS/bottom_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_bottom, FV_bottom, bottom_outputFilename)
+
+        front_outputFilename = string(outputDirectory, "MODELS/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
+
+        back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
       else
         debug("Model is empty")
       end
@@ -590,7 +619,7 @@ function ind(x, y, z, nx, ny)
     """
     Transform coordinates into linearized matrix indexes
     """
-    return x + (nx+1) * (y + (ny+1) * (z))
+    return x + (nx + 1) * (y + (ny + 1) * (z))
   end
 
 
@@ -760,6 +789,64 @@ function reindexVerticesInFaces(FV, indices, offset)
   return FV
 end
 
+function removeVerticesAndFacesFromBoundaries(V, FV)
+  """
+  Remove vertices and faces duplicates on
+  boundaries models
+  
+  V,FV: lar model of two merged boundaries
+  """
+  
+  # Removing double faces and vertices
+  newV, indices = removeDoubleVertices(V)
+  uniqueIndices = unique(indices)
+  toRemove = Array(Int,0)
+
+  for i in uniqueIndices
+    if(count((x) -> x == i, indices) > 1)
+      push!(toRemove, i)
+    end
+  end
+
+  V_final = Array(Array{Int}, 0)
+  FV_final = Array(Array{Int}, 0)
+
+  # Removing all common vertices
+  for i in 1: length(newV)
+    if !(i in toRemove)
+      push!(V_final, newV[i])
+    end
+  end
+
+  # Creating an array of faces with explicit vertices
+  FV_vertices = Array(Array{Array{Int}}, length(FV))
+  for i in 1 : length(FV)
+    FV_vertices[i] = Array(Array{Int}, 0)
+    for vtx in FV[i]
+      push!(FV_vertices[i], V[vtx])
+    end
+  end
+
+  # Computing the final model with the remaining vertices
+  for face in FV_vertices
+    remove = false
+    tmp = Array(Int, 0)
+    for vtx in face
+      ind = findfirst(V_final, vtx)
+      if (ind == 0)
+        remove = true
+      else
+        push!(tmp, ind)
+      end
+    end
+    if (remove == false)
+      push!(FV_final, tmp)
+    end
+  end
+
+  return V_final, FV_final
+end
+
 function computeModel(imageDx, imageDy, imageDz,
                       xStart, yStart, zStart,
                       facesOffset, objectBoundaryChain)
@@ -772,7 +859,7 @@ function computeModel(imageDx, imageDy, imageDz,
   facesOffset: Offset for the faces
   objectBoundaryChain: Sparse csc matrix containing the cells
   """
-  
+
   V, bases = getBases(imageDx, imageDy, imageDz)
   FV = bases[3]
 
@@ -809,14 +896,14 @@ function isOnLeft(face, V, nx, ny, nz)
   """
   Check if face is on left boundary
   """
-  
+
   for(vtx in face)
     if(V[vtx + 1][2] != 0)
       return false
     end
   end
   return true
-  
+
 end
 
 function isOnRight(face, V, nx, ny, nz)
@@ -824,7 +911,6 @@ function isOnRight(face, V, nx, ny, nz)
   Check if face is on right boundary
   """
 
-  
   for(vtx in face)
     if(V[vtx + 1][2] != ny)
       return false
@@ -838,7 +924,7 @@ function isOnTop(face, V, nx, ny, nz)
   """
   Check if face is on top boundary
   """
-  
+
   for(vtx in face)
     if(V[vtx + 1][3] != nz)
       return false
@@ -870,7 +956,7 @@ function isOnFront(face, V, nx, ny, nz)
       return false
     end
   end
-  return true  
+  return true
 end
 
 function isOnBack(face, V, nx, ny, nz)
@@ -883,7 +969,7 @@ function isOnBack(face, V, nx, ny, nz)
       return false
     end
   end
-  return true  
+  return true
 end
 
 function computeModelAndBoundaries(imageDx, imageDy, imageDz,
@@ -987,7 +1073,13 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
   end
 
   # Removing double vertices
-  return removeDoubleVerticesAndFaces(V_model, FV_model, 0)
+  return [removeDoubleVerticesAndFaces(V_model, FV_model, 0)],
+  [removeDoubleVerticesAndFaces(V_left, FV_left, 0)],
+  [removeDoubleVerticesAndFaces(V_right, FV_right, 0)],
+  [removeDoubleVerticesAndFaces(V_top, FV_top, 0)],
+  [removeDoubleVerticesAndFaces(V_bottom, FV_bottom, 0)],
+  [removeDoubleVerticesAndFaces(V_front, FV_front, 0)],
+  [removeDoubleVerticesAndFaces(V_back, FV_back, 0)]
 end
 end
 @}
@@ -1018,29 +1110,32 @@ function writeToObj(V, FV, outputFilename)
   outputFilename: prefix for the output files
   """
 
-  outputVtx = string(outputFilename, "_vtx.stl")
-  outputFaces = string(outputFilename, "_faces.stl")
+  if (length(V) != 0)
+    outputVtx = string(outputFilename, "_vtx.stl")
+    outputFaces = string(outputFilename, "_faces.stl")
 
-  fileVertex = open(outputVtx, "w")
-  fileFaces = open(outputFaces, "w")
+    fileVertex = open(outputVtx, "w")
+    fileFaces = open(outputFaces, "w")
 
-  for v in V
-    write(fileVertex, "v ")
-    write(fileVertex, string(v[1], " "))
-    write(fileVertex, string(v[2], " "))
-    write(fileVertex, string(v[3], "\n"))
+    for v in V
+      write(fileVertex, "v ")
+      write(fileVertex, string(v[1], " "))
+      write(fileVertex, string(v[2], " "))
+      write(fileVertex, string(v[3], "\n"))
+    end
+
+    for f in FV
+
+      write(fileFaces, "f ")
+      write(fileFaces, string(f[1], " "))
+      write(fileFaces, string(f[2], " "))
+      write(fileFaces, string(f[3], "\n"))
+    end
+
+    close(fileVertex)
+    close(fileFaces)
+
   end
-
-  for f in FV
-
-    write(fileFaces, "f ")
-    write(fileFaces, string(f[1], " "))
-    write(fileFaces, string(f[2], " "))
-    write(fileFaces, string(f[3], "\n"))
-  end
-
-  close(fileVertex)
-  close(fileFaces)
 
 end
 
@@ -1250,7 +1345,7 @@ function mergeObjHelper(vertices_files, faces_files)
   tasks = Array(RemoteRef, 0)
   for i in 1 : length(taskArray) - 1
 
-    task = @spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
+    task = @@spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
                                     numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
 
@@ -1306,6 +1401,117 @@ function mergeObjParallel(modelDirectory)
   mv(files[2], string(modelDirectory, "/model.obj"))
   rm(files[1])
 
+end
+
+function mergeAndRemoveDuplicates(firstPath, secondPath)
+  """
+  Merge two boundary files removing common faces between
+  them
+
+  firstPath, secondPath: Prefix of paths to merge
+  """
+
+  firstPathV = string(firstPath, "_vtx.stl")
+  firstPathFV = string(firstPath, "_faces.stl")
+
+  secondPathV = string(secondPath, "_vtx.stl")
+  secondPathFV = string(secondPath, "_faces.stl")
+
+  if(isfile(firstPathV) && isfile(secondPathV))
+
+    V = Array(Array{Int}, 0)
+    FV = Array(Array{Int}, 0)
+
+    offset = 0
+
+    # First of all open files and retrieve LAR models
+
+    f1_V = open(firstPathV)
+    f1_FV = open(firstPathFV)
+
+    for ln in eachline(f1_V)
+      splitted = split(ln)
+      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+      offset += 1
+    end
+
+    for ln in eachline(f1_FV)
+      splitted = split(ln)
+      push!(FV, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+    end
+
+    close(f1_V)
+    close(f1_FV)
+
+    f2_V = open(secondPathV)
+    f2_FV = open(secondPathFV)
+
+    for ln in eachline(f2_V)
+      splitted = split(ln)
+      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+    end
+
+    for ln in eachline(f2_FV)
+      splitted = split(ln)
+      push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
+    end
+
+    close(f2_V)
+    close(f2_FV)
+    
+    V_final, FV_final = LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
+    
+    # Writing model to file
+    rm(firstPathV)
+    rm(firstPathFV)
+    rm(secondPathV)
+    rm(secondPathFV)
+    writeToObj(V_final, FV_final, firstPath)
+  end  
+end
+
+function mergeBoundaries(modelDirectory,
+                         imageHeight, imageWidth, imageDepth,
+                         imageDx, imageDy, imageDz)
+  """
+  Merge boundaries files. For every cell of size
+  (imageDx, imageDy, imageDz) in the model grid,
+  it merges right faces with next left faces, top faces
+  with the next cell bottom faces, and front faces
+  with the next cell back faces
+
+  modelDirectory: directory containing models
+  imageHeight, imageWidth, imageDepth: images sizes
+  imageDx, imageDy, imageDz: sizes of cells grid
+  """
+
+  beginImageStack = 0
+  endImage = beginImageStack
+
+  for zBlock in 0:(imageDepth / imageDz - 1)
+    startImage = endImage
+    endImage = startImage + imageDz
+    for xBlock in 0:(imageHeight / imageDx - 1)
+      for yBlock in 0:(imageWidth / imageDy - 1)
+
+        # Merging right Boundary
+        firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1, "_", startImage, "_", endImage)
+        mergeAndRemoveDuplicates(firstPath, secondPath)
+
+        # Merging top boundary
+        firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 1)
+        mergeAndRemoveDuplicates(firstPath, secondPath)
+
+        # Merging front boundary
+        firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
+        mergeAndRemoveDuplicates(firstPath, secondPath)
+
+      end
+    end
+  end
 end
 end
 @}

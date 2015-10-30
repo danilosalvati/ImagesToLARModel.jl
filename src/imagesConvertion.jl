@@ -66,7 +66,6 @@ function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory,
 
 end
 
-
 function startImageConvertion(sliceDirectory, bestImage, outputDirectory, borderFilename,
                               imageHeight, imageWidth, imageDepth,
                               imageDx, imageDy, imageDz,
@@ -77,7 +76,6 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
   sliceDirectory: directory containing the image stack
   imageForCentroids: image chosen for centroid computation
   """
-
 
   # Create clusters for image segmentation
   info("Computing image centroids")
@@ -109,7 +107,7 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
                            imageDx, imageDy, imageDz,
                            imageHeight, imageWidth,
                            centroidsCalc, boundaryMat)
-    
+
     push!(tasks, task)
     =#
     imageConvertionProcess(sliceDirectory, outputDirectory,
@@ -118,19 +116,24 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
                            imageHeight, imageWidth,
                            centroidsCalc, boundaryMat)
 
-
   end
 
-  # Waiting for processes completion
+  # Waiting for tasks completion
   for task in tasks
     wait(task)
   end
 
+  info("Merging boundaries")
+  # Merge Boundaries files
+  Model2Obj.mergeBoundaries(string(outputDirectory, "MODELS"),
+                            imageHeight, imageWidth, imageDepth,
+                            imageDx, imageDy, imageDz)
+
   info("Merging obj models")
   if parallelMerge
-    Model2Obj.mergeObjParallel(string(outputDirectory,"MODELS"))
+    Model2Obj.mergeObjParallel(string(outputDirectory, "MODELS"))
   else
-    Model2Obj.mergeObj(string(outputDirectory,"MODELS"))
+    Model2Obj.mergeObj(string(outputDirectory, "MODELS"))
   end
 
 end
@@ -202,11 +205,37 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         catch
         end
         # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-        #V, FV = LARUtils.computeModel(imageDx, imageDy, imageDz, yStart, xStart, zStart, 0, objectBoundaryChain)
-        V, FV = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
-        #models = Model2Obj.splitBoundaries(V, FV, yStart, xStart, zStart, nx, ny, nz)
-        outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V, FV, outputFilename)
+        models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
+
+        V, FV = models[1][1] # inside model
+        V_left, FV_left = models[2][1]
+        V_right, FV_right = models[3][1] # right boundary
+        V_top, FV_top = models[4][1] # top boundary
+        V_bottom, FV_bottom = models[5][1] # bottom boundary
+        V_front, FV_front = models[6][1] # front boundary
+        V_back, FV_back = models[7][1] # back boundary
+
+        # Writing all models on disk
+        model_outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V, FV, model_outputFilename)
+
+        left_outputFilename = string(outputDirectory, "MODELS/left_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_left, FV_left, left_outputFilename)
+
+        right_outputFilename = string(outputDirectory, "MODELS/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_right, FV_right, right_outputFilename)
+
+        top_outputFilename = string(outputDirectory, "MODELS/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_top, FV_top, top_outputFilename)
+
+        bottom_outputFilename = string(outputDirectory, "MODELS/bottom_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_bottom, FV_bottom, bottom_outputFilename)
+
+        front_outputFilename = string(outputDirectory, "MODELS/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
+
+        back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
       else
         debug("Model is empty")
       end

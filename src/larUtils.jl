@@ -11,7 +11,7 @@ function ind(x, y, z, nx, ny)
     """
     Transform coordinates into linearized matrix indexes
     """
-    return x + (nx+1) * (y + (ny+1) * (z))
+    return x + (nx + 1) * (y + (ny + 1) * (z))
   end
 
 
@@ -181,6 +181,64 @@ function reindexVerticesInFaces(FV, indices, offset)
   return FV
 end
 
+function removeVerticesAndFacesFromBoundaries(V, FV)
+  """
+  Remove vertices and faces duplicates on
+  boundaries models
+  
+  V,FV: lar model of two merged boundaries
+  """
+  
+  # Removing double faces and vertices
+  newV, indices = removeDoubleVertices(V)
+  uniqueIndices = unique(indices)
+  toRemove = Array(Int,0)
+
+  for i in uniqueIndices
+    if(count((x) -> x == i, indices) > 1)
+      push!(toRemove, i)
+    end
+  end
+
+  V_final = Array(Array{Int}, 0)
+  FV_final = Array(Array{Int}, 0)
+
+  # Removing all common vertices
+  for i in 1: length(newV)
+    if !(i in toRemove)
+      push!(V_final, newV[i])
+    end
+  end
+
+  # Creating an array of faces with explicit vertices
+  FV_vertices = Array(Array{Array{Int}}, length(FV))
+  for i in 1 : length(FV)
+    FV_vertices[i] = Array(Array{Int}, 0)
+    for vtx in FV[i]
+      push!(FV_vertices[i], V[vtx])
+    end
+  end
+
+  # Computing the final model with the remaining vertices
+  for face in FV_vertices
+    remove = false
+    tmp = Array(Int, 0)
+    for vtx in face
+      ind = findfirst(V_final, vtx)
+      if (ind == 0)
+        remove = true
+      else
+        push!(tmp, ind)
+      end
+    end
+    if (remove == false)
+      push!(FV_final, tmp)
+    end
+  end
+
+  return V_final, FV_final
+end
+
 function computeModel(imageDx, imageDy, imageDz,
                       xStart, yStart, zStart,
                       facesOffset, objectBoundaryChain)
@@ -193,7 +251,7 @@ function computeModel(imageDx, imageDy, imageDz,
   facesOffset: Offset for the faces
   objectBoundaryChain: Sparse csc matrix containing the cells
   """
-  
+
   V, bases = getBases(imageDx, imageDy, imageDz)
   FV = bases[3]
 
@@ -230,14 +288,14 @@ function isOnLeft(face, V, nx, ny, nz)
   """
   Check if face is on left boundary
   """
-  
+
   for(vtx in face)
     if(V[vtx + 1][2] != 0)
       return false
     end
   end
   return true
-  
+
 end
 
 function isOnRight(face, V, nx, ny, nz)
@@ -245,7 +303,6 @@ function isOnRight(face, V, nx, ny, nz)
   Check if face is on right boundary
   """
 
-  
   for(vtx in face)
     if(V[vtx + 1][2] != ny)
       return false
@@ -259,7 +316,7 @@ function isOnTop(face, V, nx, ny, nz)
   """
   Check if face is on top boundary
   """
-  
+
   for(vtx in face)
     if(V[vtx + 1][3] != nz)
       return false
@@ -291,7 +348,7 @@ function isOnFront(face, V, nx, ny, nz)
       return false
     end
   end
-  return true  
+  return true
 end
 
 function isOnBack(face, V, nx, ny, nz)
@@ -304,7 +361,7 @@ function isOnBack(face, V, nx, ny, nz)
       return false
     end
   end
-  return true  
+  return true
 end
 
 function computeModelAndBoundaries(imageDx, imageDy, imageDz,
@@ -408,6 +465,12 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
   end
 
   # Removing double vertices
-  return removeDoubleVerticesAndFaces(V_model, FV_model, 0)
+  return [removeDoubleVerticesAndFaces(V_model, FV_model, 0)],
+  [removeDoubleVerticesAndFaces(V_left, FV_left, 0)],
+  [removeDoubleVerticesAndFaces(V_right, FV_right, 0)],
+  [removeDoubleVerticesAndFaces(V_top, FV_top, 0)],
+  [removeDoubleVerticesAndFaces(V_bottom, FV_bottom, 0)],
+  [removeDoubleVerticesAndFaces(V_front, FV_front, 0)],
+  [removeDoubleVerticesAndFaces(V_back, FV_back, 0)]
 end
 end

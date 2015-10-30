@@ -22,29 +22,32 @@ function writeToObj(V, FV, outputFilename)
   outputFilename: prefix for the output files
   """
 
-  outputVtx = string(outputFilename, "_vtx.stl")
-  outputFaces = string(outputFilename, "_faces.stl")
+  if (length(V) != 0)
+    outputVtx = string(outputFilename, "_vtx.stl")
+    outputFaces = string(outputFilename, "_faces.stl")
 
-  fileVertex = open(outputVtx, "w")
-  fileFaces = open(outputFaces, "w")
+    fileVertex = open(outputVtx, "w")
+    fileFaces = open(outputFaces, "w")
 
-  for v in V
-    write(fileVertex, "v ")
-    write(fileVertex, string(v[1], " "))
-    write(fileVertex, string(v[2], " "))
-    write(fileVertex, string(v[3], "\n"))
+    for v in V
+      write(fileVertex, "v ")
+      write(fileVertex, string(v[1], " "))
+      write(fileVertex, string(v[2], " "))
+      write(fileVertex, string(v[3], "\n"))
+    end
+
+    for f in FV
+
+      write(fileFaces, "f ")
+      write(fileFaces, string(f[1], " "))
+      write(fileFaces, string(f[2], " "))
+      write(fileFaces, string(f[3], "\n"))
+    end
+
+    close(fileVertex)
+    close(fileFaces)
+
   end
-
-  for f in FV
-
-    write(fileFaces, "f ")
-    write(fileFaces, string(f[1], " "))
-    write(fileFaces, string(f[2], " "))
-    write(fileFaces, string(f[3], "\n"))
-  end
-
-  close(fileVertex)
-  close(fileFaces)
 
 end
 
@@ -254,7 +257,7 @@ function mergeObjHelper(vertices_files, faces_files)
   tasks = Array(RemoteRef, 0)
   for i in 1 : length(taskArray) - 1
 
-    task = pawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
+    task = @spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
                                     numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
 
@@ -310,5 +313,116 @@ function mergeObjParallel(modelDirectory)
   mv(files[2], string(modelDirectory, "/model.obj"))
   rm(files[1])
 
+end
+
+function mergeAndRemoveDuplicates(firstPath, secondPath)
+  """
+  Merge two boundary files removing common faces between
+  them
+
+  firstPath, secondPath: Prefix of paths to merge
+  """
+
+  firstPathV = string(firstPath, "_vtx.stl")
+  firstPathFV = string(firstPath, "_faces.stl")
+
+  secondPathV = string(secondPath, "_vtx.stl")
+  secondPathFV = string(secondPath, "_faces.stl")
+
+  if(isfile(firstPathV) && isfile(secondPathV))
+
+    V = Array(Array{Int}, 0)
+    FV = Array(Array{Int}, 0)
+
+    offset = 0
+
+    # First of all open files and retrieve LAR models
+
+    f1_V = open(firstPathV)
+    f1_FV = open(firstPathFV)
+
+    for ln in eachline(f1_V)
+      splitted = split(ln)
+      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+      offset += 1
+    end
+
+    for ln in eachline(f1_FV)
+      splitted = split(ln)
+      push!(FV, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+    end
+
+    close(f1_V)
+    close(f1_FV)
+
+    f2_V = open(secondPathV)
+    f2_FV = open(secondPathFV)
+
+    for ln in eachline(f2_V)
+      splitted = split(ln)
+      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+    end
+
+    for ln in eachline(f2_FV)
+      splitted = split(ln)
+      push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
+    end
+
+    close(f2_V)
+    close(f2_FV)
+    
+    V_final, FV_final = LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
+    
+    # Writing model to file
+    rm(firstPathV)
+    rm(firstPathFV)
+    rm(secondPathV)
+    rm(secondPathFV)
+    writeToObj(V_final, FV_final, firstPath)
+  end  
+end
+
+function mergeBoundaries(modelDirectory,
+                         imageHeight, imageWidth, imageDepth,
+                         imageDx, imageDy, imageDz)
+  """
+  Merge boundaries files. For every cell of size
+  (imageDx, imageDy, imageDz) in the model grid,
+  it merges right faces with next left faces, top faces
+  with the next cell bottom faces, and front faces
+  with the next cell back faces
+
+  modelDirectory: directory containing models
+  imageHeight, imageWidth, imageDepth: images sizes
+  imageDx, imageDy, imageDz: sizes of cells grid
+  """
+
+  beginImageStack = 0
+  endImage = beginImageStack
+
+  for zBlock in 0:(imageDepth / imageDz - 1)
+    startImage = endImage
+    endImage = startImage + imageDz
+    for xBlock in 0:(imageHeight / imageDx - 1)
+      for yBlock in 0:(imageWidth / imageDy - 1)
+
+        # Merging right Boundary
+        firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1, "_", startImage, "_", endImage)
+        mergeAndRemoveDuplicates(firstPath, secondPath)
+
+        # Merging top boundary
+        firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 1)
+        mergeAndRemoveDuplicates(firstPath, secondPath)
+
+        # Merging front boundary
+        firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
+        mergeAndRemoveDuplicates(firstPath, secondPath)
+
+      end
+    end
+  end
 end
 end
