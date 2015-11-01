@@ -400,6 +400,7 @@ function mergeBoundaries(modelDirectory,
   beginImageStack = 0
   endImage = beginImageStack
 
+  tasks = Array(RemoteRef, 0)
   for zBlock in 0:(imageDepth / imageDz - 1)
     startImage = endImage
     endImage = startImage + imageDz
@@ -409,20 +410,27 @@ function mergeBoundaries(modelDirectory,
         # Merging right Boundary
         firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
         secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1, "_", startImage, "_", endImage)
-        mergeAndRemoveDuplicates(firstPath, secondPath)
+        task1 = @spawn mergeAndRemoveDuplicates(firstPath, secondPath)
 
         # Merging top boundary
         firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
         secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
-        mergeAndRemoveDuplicates(firstPath, secondPath)
+        task2 = @spawn mergeAndRemoveDuplicates(firstPath, secondPath)
 
         # Merging front boundary
         firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
         secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
-        mergeAndRemoveDuplicates(firstPath, secondPath)
+        task3 = @spawn mergeAndRemoveDuplicates(firstPath, secondPath)
+        
+        push!(tasks, task1, task2, task3)
 
       end
     end
+  end
+  
+  # Waiting for tasks
+  for task in tasks
+    wait(task)
   end
 end
 end
