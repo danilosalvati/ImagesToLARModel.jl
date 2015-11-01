@@ -189,51 +189,50 @@ function removeVerticesAndFacesFromBoundaries(V, FV)
   V,FV: lar model of two merged boundaries
   """
 
-  # Removing double faces and vertices
   newV, indices = removeDoubleVertices(V)
   uniqueIndices = unique(indices)
-  toRemove = Array(Int,0)
 
-  for i in uniqueIndices
-    if(count((x) -> x == i, indices) > 1)
-      push!(toRemove, i)
+  # Removing double faces on both boundaries
+  FV_reindexed = reindexVerticesInFaces(FV, indices, 0)
+  FV_unique = unique(FV_reindexed)
+  
+  FV_cleaned = Array(Array{Int}, 0)
+  for f in FV_unique
+    if(count((x) -> x == f, FV_reindexed) == 1)
+      push!(FV_cleaned, f)
     end
   end
-
+  
+  # Creating an array of faces with explicit vertices
+  FV_vertices = Array(Array{Array{Int}}, 0)
+  
+  for i in 1 : length(FV_cleaned)
+    push!(FV_vertices, Array(Array{Int}, 0))
+    for vtx in FV_cleaned[i]
+      push!(FV_vertices[i], newV[vtx])
+    end
+  end
+  
   V_final = Array(Array{Int}, 0)
   FV_final = Array(Array{Int}, 0)
-
-  # Removing all common vertices
-  for i in 1: length(newV)
-    if !(i in toRemove)
-      push!(V_final, newV[i])
-    end
-  end
-
-  # Creating an array of faces with explicit vertices
-  FV_vertices = Array(Array{Array{Int}}, length(FV))
-  for i in 1 : length(FV)
-    FV_vertices[i] = Array(Array{Int}, 0)
-    for vtx in FV[i]
-      push!(FV_vertices[i], V[vtx])
-    end
-  end
-
-  # Computing the final model with the remaining vertices
+  
+  # Saving only used vertices
   for face in FV_vertices
-    remove = false
+    for vtx in face
+      push!(V_final, vtx)
+    end
+  end
+  
+  V_final = unique(V_final)
+
+  # Renumbering FV
+  for face in FV_vertices
     tmp = Array(Int, 0)
     for vtx in face
       ind = findfirst(V_final, vtx)
-      if (ind == 0)
-        remove = true
-      else
-        push!(tmp, ind)
-      end
+      push!(tmp, ind)
     end
-    if (remove == false)
-      push!(FV_final, tmp)
-    end
+    push!(FV_final, tmp)
   end
 
   return V_final, FV_final
