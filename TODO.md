@@ -4,7 +4,6 @@
 
 - Because of a bug in ImageMagick probably it would be better to create a bash script for convert dicom images to png (convert -define dcm:display-range=reset slice.0000.0002.dcm -normalize slice.0000.0002.png or convert -define dcm:display-range=reset slice.0000.0002.dcm -auto-level slice.0000.0002.png)
 - Implement a distributed algorithm for model smoothing
-- BUG: It seems that module cannot be loaded on Julia > 0.3
 
 ## PngStack2Array3dJulia
 
@@ -29,7 +28,6 @@
 
 ## Model2Obj
 
-- IMPORTANT: Compute the entire boundary chain for the model and not only local boundary
 - When creating stl files we need all cubes or only "+1" oriented faces?
 - Add functions for removing double vertices and faces (it could be an iterative local removing)
 - Combine faces on same plane into a unique face

@@ -1,11 +1,5 @@
 module ImagesConvertion
 
-require(string(Pkg.dir("ImagesToLARModel/src"), "/generateBorderMatrix.jl"))
-require(string(Pkg.dir("ImagesToLARModel/src"), "/pngStack2Array3dJulia.jl"))
-require(string(Pkg.dir("ImagesToLARModel/src"), "/lar2Julia.jl"))
-require(string(Pkg.dir("ImagesToLARModel/src"), "/model2Obj.jl"))
-require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
-
 import GenerateBorderMatrix
 import PngStack2Array3dJulia
 import Lar2Julia
@@ -101,7 +95,6 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
     info("StartImage = ", startImage)
     info("endImage = ", endImage)
 
-    #=
     task = @spawn imageConvertionProcess(sliceDirectory, outputDirectory,
                            beginImageStack, startImage, endImage,
                            imageDx, imageDy, imageDz,
@@ -109,12 +102,6 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
                            centroidsCalc, boundaryMat)
 
     push!(tasks, task)
-    =#
-    imageConvertionProcess(sliceDirectory, outputDirectory,
-                           beginImageStack, startImage, endImage,
-                           imageDx, imageDy, imageDz,
-                           imageHeight, imageWidth,
-                           centroidsCalc, boundaryMat)
 
   end
 

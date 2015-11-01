@@ -1,7 +1,4 @@
 module GenerateBorderMatrix
-"""
-Module for generation of the boundary matrix
-"""
 
 type MatrixObject
   ROWCOUNT
@@ -13,8 +10,6 @@ end
 
 
 export computeOriented3Border, writeBorder, getOriented3BorderPath
-
-require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import LARUtils
 using PyCall

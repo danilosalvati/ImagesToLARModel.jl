@@ -44,7 +44,3 @@ These are the accepted parameters:
     - ERROR (4 for JSON configuration file)
     - CRITICAL (5 for JSON configuration file)
 - parallelMerge: Choose if you want to merge model files using a distribuite algorithm or not (experimental)
-
-Known issues
-------
-At the moment it seems that module cannot be loaded on Julia 0.4

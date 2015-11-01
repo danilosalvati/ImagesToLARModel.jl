@@ -1,9 +1,6 @@
 module ImagesToLARModel
-"""
-Main module for the library. It starts conversion
-taking configuration parameters
-"""
-require(string(Pkg.dir("ImagesToLARModel/src"), "/imagesConvertion.jl"))
+
+push!(LOAD_PATH, Pkg.dir("ImagesToLARModel/src"))
 
 import JSON
 import ImagesConvertion
@@ -15,14 +12,14 @@ export convertImagesToLARModel
 function loadConfiguration(configurationFile)
   """
   load parameters from JSON file
-  
+
   configurationFile: Path of the configuration file
   """
 
   configuration = JSON.parse(configurationFile)
-  
+
   DEBUG_LEVELS = [DEBUG, INFO, WARNING, ERROR, CRITICAL]
-  
+
   try
     if configuration["parallelMerge"] == "true"
       parallelMerge = true
@@ -43,7 +40,7 @@ function convertImagesToLARModel(configurationFile)
   """
   Start convertion of a stack of images into a 3D model
   loading parameters from a JSON configuration file
-  
+
   configurationFile: Path of the configuration file
   """
   inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL = loadConfiguration(open(configurationFile))
@@ -54,7 +51,7 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
                                  nx, ny, nz, DEBUG_LEVEL = INFO, parallelMerge = false)
   """
   Start convertion of a stack of images into a 3D model
-  
+
   inputDirectory: Directory containing the stack of images
   outputDirectory: Directory containing the output
   bestImage: Image chosen for centroids computation

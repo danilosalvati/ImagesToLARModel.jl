@@ -1,7 +1,5 @@
 module Lar2Julia
-"""
-larcc functions for Julia
-"""
+
 export larBoundaryChain, cscChainToCellList
 
 import JSON

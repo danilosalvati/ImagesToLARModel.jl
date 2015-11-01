@@ -68,11 +68,8 @@ This is the abstract (we will use LAR~\cite{cclar-proj:2013:00})
 
 @O src/ImagesToLARModel.jl
 @{module ImagesToLARModel
-"""
-Main module for the library. It starts conversion
-taking configuration parameters
-"""
-require(string(Pkg.dir("ImagesToLARModel/src"), "/imagesConvertion.jl"))
+
+push!(LOAD_PATH, Pkg.dir("ImagesToLARModel/src"))
 
 import JSON
 import ImagesConvertion
@@ -84,14 +81,14 @@ export convertImagesToLARModel
 function loadConfiguration(configurationFile)
   """
   load parameters from JSON file
-  
+
   configurationFile: Path of the configuration file
   """
 
   configuration = JSON.parse(configurationFile)
-  
+
   DEBUG_LEVELS = [DEBUG, INFO, WARNING, ERROR, CRITICAL]
-  
+
   try
     if configuration["parallelMerge"] == "true"
       parallelMerge = true
@@ -112,7 +109,7 @@ function convertImagesToLARModel(configurationFile)
   """
   Start convertion of a stack of images into a 3D model
   loading parameters from a JSON configuration file
-  
+
   configurationFile: Path of the configuration file
   """
   inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL = loadConfiguration(open(configurationFile))
@@ -123,7 +120,7 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
                                  nx, ny, nz, DEBUG_LEVEL = INFO, parallelMerge = false)
   """
   Start convertion of a stack of images into a 3D model
-  
+
   inputDirectory: Directory containing the stack of images
   outputDirectory: Directory containing the output
   bestImage: Image chosen for centroids computation
@@ -147,14 +144,8 @@ end
 end
 @}
 
-@O src/imagesConvertion.jl
+@O src/ImagesConvertion.jl
 @{module ImagesConvertion
-
-require(string(Pkg.dir("ImagesToLARModel/src"), "/generateBorderMatrix.jl"))
-require(string(Pkg.dir("ImagesToLARModel/src"), "/pngStack2Array3dJulia.jl"))
-require(string(Pkg.dir("ImagesToLARModel/src"), "/lar2Julia.jl"))
-require(string(Pkg.dir("ImagesToLARModel/src"), "/model2Obj.jl"))
-require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import GenerateBorderMatrix
 import PngStack2Array3dJulia
@@ -251,7 +242,6 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
     info("StartImage = ", startImage)
     info("endImage = ", endImage)
 
-    #=
     task = @@spawn imageConvertionProcess(sliceDirectory, outputDirectory,
                            beginImageStack, startImage, endImage,
                            imageDx, imageDy, imageDz,
@@ -259,12 +249,6 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
                            centroidsCalc, boundaryMat)
 
     push!(tasks, task)
-    =#
-    imageConvertionProcess(sliceDirectory, outputDirectory,
-                           beginImageStack, startImage, endImage,
-                           imageDx, imageDy, imageDz,
-                           imageHeight, imageWidth,
-                           centroidsCalc, boundaryMat)
 
   end
 
@@ -431,11 +415,8 @@ end
 @}
 
 
-@O src/generateBorderMatrix.jl
+@O src/GenerateBorderMatrix.jl
 @{module GenerateBorderMatrix
-"""
-Module for generation of the boundary matrix
-"""
 
 type MatrixObject
   ROWCOUNT
@@ -447,8 +428,6 @@ end
 
 
 export computeOriented3Border, writeBorder, getOriented3BorderPath
-
-require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import LARUtils
 using PyCall
@@ -518,11 +497,9 @@ end
 @}
 
 
-@O src/lar2Julia.jl
+@O src/Lar2Julia.jl
 @{module Lar2Julia
-"""
-larcc functions for Julia
-"""
+
 export larBoundaryChain, cscChainToCellList
 
 import JSON
@@ -605,11 +582,8 @@ end
 end
 @}
 
-@O src/larUtils.jl
+@O src/LARUtils.jl
 @{module LARUtils
-"""
-Utility functions for extracting 3d models from images
-"""
 
 using Logging
 
@@ -803,34 +777,34 @@ function removeVerticesAndFacesFromBoundaries(V, FV)
   # Removing double faces on both boundaries
   FV_reindexed = reindexVerticesInFaces(FV, indices, 0)
   FV_unique = unique(FV_reindexed)
-  
+
   FV_cleaned = Array(Array{Int}, 0)
   for f in FV_unique
     if(count((x) -> x == f, FV_reindexed) == 1)
       push!(FV_cleaned, f)
     end
   end
-  
+
   # Creating an array of faces with explicit vertices
   FV_vertices = Array(Array{Array{Int}}, 0)
-  
+
   for i in 1 : length(FV_cleaned)
     push!(FV_vertices, Array(Array{Int}, 0))
     for vtx in FV_cleaned[i]
       push!(FV_vertices[i], newV[vtx])
     end
   end
-  
+
   V_final = Array(Array{Int}, 0)
   FV_final = Array(Array{Int}, 0)
-  
+
   # Saving only used vertices
   for face in FV_vertices
     for vtx in face
       push!(V_final, vtx)
     end
   end
-  
+
   V_final = unique(V_final)
 
   # Renumbering FV
@@ -1084,21 +1058,14 @@ end
 @}
 
 
-@O src/model2Obj.jl
+@O src/Model2Obj.jl
 @{module Model2Obj
-"""
-Module that takes a 3d model and write it on
-obj files
-"""
-
-require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import LARUtils
 
 using Logging
 
 export writeToObj, mergeObj, mergeObjParallel
-
 
 function writeToObj(V, FV, outputFilename)
   """
@@ -1457,16 +1424,16 @@ function mergeAndRemoveDuplicates(firstPath, secondPath)
 
     close(f2_V)
     close(f2_FV)
-    
+
     V_final, FV_final = LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
-    
+
     # Writing model to file
     rm(firstPathV)
     rm(firstPathFV)
     rm(secondPathV)
     rm(secondPathFV)
     writeToObj(V_final, FV_final, firstPath)
-  end  
+  end
 end
 
 function mergeBoundaries(modelDirectory,
@@ -1508,13 +1475,13 @@ function mergeBoundaries(modelDirectory,
         firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
         secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
         task3 = @@spawn mergeAndRemoveDuplicates(firstPath, secondPath)
-        
+
         push!(tasks, task1, task2, task3)
 
       end
     end
   end
-  
+
   # Waiting for tasks
   for task in tasks
     wait(task)
@@ -1524,13 +1491,8 @@ end
 @}
 
 
-@O src/pngStack2Array3dJulia.jl
+@O src/PngStack2Array3dJulia.jl
 @{module PngStack2Array3dJulia
-
-"""
-This module loads a stack of png files returning
-an array of pixel values divided into segments
-"""
 
 export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
 
@@ -1734,7 +1696,6 @@ function convertImages(inputPath, outputPath, bestImage)
 
   return newBestImage
 end
-
 end
 @}
 

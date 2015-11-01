@@ -1,7 +1,4 @@
 module LARUtils
-"""
-Utility functions for extracting 3d models from images
-"""
 
 using Logging
 
@@ -195,34 +192,34 @@ function removeVerticesAndFacesFromBoundaries(V, FV)
   # Removing double faces on both boundaries
   FV_reindexed = reindexVerticesInFaces(FV, indices, 0)
   FV_unique = unique(FV_reindexed)
-  
+
   FV_cleaned = Array(Array{Int}, 0)
   for f in FV_unique
     if(count((x) -> x == f, FV_reindexed) == 1)
       push!(FV_cleaned, f)
     end
   end
-  
+
   # Creating an array of faces with explicit vertices
   FV_vertices = Array(Array{Array{Int}}, 0)
-  
+
   for i in 1 : length(FV_cleaned)
     push!(FV_vertices, Array(Array{Int}, 0))
     for vtx in FV_cleaned[i]
       push!(FV_vertices[i], newV[vtx])
     end
   end
-  
+
   V_final = Array(Array{Int}, 0)
   FV_final = Array(Array{Int}, 0)
-  
+
   # Saving only used vertices
   for face in FV_vertices
     for vtx in face
       push!(V_final, vtx)
     end
   end
-  
+
   V_final = unique(V_final)
 
   # Renumbering FV

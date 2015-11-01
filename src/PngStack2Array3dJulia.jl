@@ -1,10 +1,5 @@
 module PngStack2Array3dJulia
 
-"""
-This module loads a stack of png files returning
-an array of pixel values divided into segments
-"""
-
 export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
 
 using Images # For loading png images
@@ -207,5 +202,4 @@ function convertImages(inputPath, outputPath, bestImage)
 
   return newBestImage
 end
-
 end

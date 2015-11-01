@@ -1,17 +1,10 @@
 module Model2Obj
-"""
-Module that takes a 3d model and write it on
-obj files
-"""
-
-require(string(Pkg.dir("ImagesToLARModel/src"), "/larUtils.jl"))
 
 import LARUtils
 
 using Logging
 
 export writeToObj, mergeObj, mergeObjParallel
-
 
 function writeToObj(V, FV, outputFilename)
   """
@@ -370,16 +363,16 @@ function mergeAndRemoveDuplicates(firstPath, secondPath)
 
     close(f2_V)
     close(f2_FV)
-    
+
     V_final, FV_final = LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
-    
+
     # Writing model to file
     rm(firstPathV)
     rm(firstPathFV)
     rm(secondPathV)
     rm(secondPathFV)
     writeToObj(V_final, FV_final, firstPath)
-  end  
+  end
 end
 
 function mergeBoundaries(modelDirectory,
@@ -421,13 +414,13 @@ function mergeBoundaries(modelDirectory,
         firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
         secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
         task3 = @spawn mergeAndRemoveDuplicates(firstPath, secondPath)
-        
+
         push!(tasks, task1, task2, task3)
 
       end
     end
   end
-  
+
   # Waiting for tasks
   for task in tasks
     wait(task)
