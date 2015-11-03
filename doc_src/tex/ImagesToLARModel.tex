@@ -206,6 +206,7 @@ Because of their number it has been realized a function for simply loading them 
 
   DEBUG_LEVELS = [DEBUG, INFO, WARNING, ERROR, CRITICAL]
 
+  parallelMerge = false
   try
     if configuration["parallelMerge"] == "true"
       parallelMerge = true
@@ -213,7 +214,6 @@ Because of their number it has been realized a function for simply loading them 
       parallelMerge = false
     end
   catch
-    parallelMerge = false
   end
 
   return configuration["inputDirectory"], configuration["outputDirectory"],

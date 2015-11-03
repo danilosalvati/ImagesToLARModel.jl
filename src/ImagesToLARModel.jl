@@ -22,6 +22,7 @@ function loadConfiguration(configurationFile)
 
   DEBUG_LEVELS = [DEBUG, INFO, WARNING, ERROR, CRITICAL]
 
+  parallelMerge = false
   try
     if configuration["parallelMerge"] == "true"
       parallelMerge = true
@@ -29,7 +30,6 @@ function loadConfiguration(configurationFile)
       parallelMerge = false
     end
   catch
-    parallelMerge = false
   end
 
   return configuration["inputDirectory"], configuration["outputDirectory"],
