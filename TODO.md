@@ -7,7 +7,6 @@
 
 ## PngStack2Array3dJulia
 
-- BUG: Library doens't work if border size isn't 2x2x2
 - Actually if images dimensions are odd I remove one pixel; perhaps it would be better to add one instead
 - Images convertion need to be parallelized
 

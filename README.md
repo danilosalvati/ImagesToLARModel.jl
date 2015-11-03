@@ -25,8 +25,8 @@ This is an example of a valid JSON configuration file:
       "outputDirectory": "Path of the output directory",
       "bestImage": "Name of the best image (with extension) ",
       "nx": border x,
-      "ny": border x,
-      "nz": border x,
+      "ny": border y,
+      "nz": border z,
       "DEBUG_LEVEL": julia Logging level
       "parallelMerge": "true" or "false" 
     }

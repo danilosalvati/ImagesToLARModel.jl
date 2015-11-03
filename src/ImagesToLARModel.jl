@@ -2,12 +2,14 @@ module ImagesToLARModel
 
 push!(LOAD_PATH, Pkg.dir("ImagesToLARModel/src"))
 
+
 import JSON
 import ImagesConvertion
 
 using Logging
 
 export convertImagesToLARModel
+
 
 function loadConfiguration(configurationFile)
   """
@@ -30,9 +32,11 @@ function loadConfiguration(configurationFile)
     parallelMerge = false
   end
 
-  return configuration["inputDirectory"], configuration["outputDirectory"], configuration["bestImage"],
+  return configuration["inputDirectory"], configuration["outputDirectory"],
+        configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
-        DEBUG_LEVELS[configuration["DEBUG_LEVEL"]]
+        DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
+        parallelMerge
 
 end
 
@@ -43,8 +47,10 @@ function convertImagesToLARModel(configurationFile)
 
   configurationFile: Path of the configuration file
   """
-  inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL = loadConfiguration(open(configurationFile))
-  convertImagesToLARModel(inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL)
+  inputDirectory, outputDirectory, bestImage, nx, ny, nz,
+      DEBUG_LEVEL, parallelMerge = loadConfiguration(open(configurationFile))
+  convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
+                        nx, ny, nz, DEBUG_LEVEL, parallelMerge)
 end
 
 function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
@@ -70,6 +76,8 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
   end
 
   Logging.configure(level=DEBUG_LEVEL)
-  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory, parallelMerge)
+  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage,
+          inputDirectory, outputDirectory, parallelMerge)
 end
+
 end

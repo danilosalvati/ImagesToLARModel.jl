@@ -48,7 +48,9 @@
 %\nonstopmode
 
 \begin{abstract}
-This is the abstract (we will use LAR~\cite{cclar-proj:2013:00})
+Here we will present a software for creating a three-dimensional model from a stack of images. This can be useful because of the simplicity of these type of representations. In particular a scope of use can be offered by medicine, where there is an enormous number of images but with very complex two-dimensional representations.\\
+
+This work will use the LAR representation with the Julia language (\cite{cclar-proj:2013:00}), because of its simplicity, showing how it can be used for quickly process image data.
 
 \end{abstract}
 
@@ -61,24 +63,139 @@ This is the abstract (we will use LAR~\cite{cclar-proj:2013:00})
 \section{Introduction}\label{sec:intro}
 %===============================================================================
 
-%-------------------------------------------------------------------------------
-%-------------------------------------------------------------------------------
-\section{Exporting the library}
+This work has the objective of transforming a two-dimensional representation of a model (based on a stack of images) into a three-dimensional representation based on the LAR schema. In particular, it will produce a single obj model which can be viewed with standard graphics software.\\
+
+The biggest problem we will face is lack of memory. In fact, our aim is to get a very large stack of images (so with the maximum possible resolution) and convert them. However biomedical images used in research are very big so we cannot save them entirely in memory. The idea used here is the same of existing software based on LAR schema (\cite{paodcvjcadanda2015}) with the introduction of parallelism layer, transforming only little parts of images obtaining models to merge in final result file.
+A typical hardware environment for this software is a cluster of computers, where processes (which convert images portions) are distributed among different machines.
+
+\subsection{Why Julia}\label{sec:julia}
+Ricordare che precedenti versioni erano in python\\
+Semplicita\\
+Efficienza\\
+Capacita di realizzare programmi paralleli con poco sforzo\\
 %-------------------------------------------------------------------------------
 
-@O src/ImagesToLARModel.jl
-@{module ImagesToLARModel
 
-push!(LOAD_PATH, Pkg.dir("ImagesToLARModel/src"))
+%-------------------------------------------------------------------------------
+%===============================================================================
+\section{Software structure}\label{sec:structure}
+%===============================================================================
 
-import JSON
+\subsection{Julia packages}\label{sec:juliaPkg}
+
+This software will be distributed as a Julia Package. For the actual release (Julia 0.4) a package is a simple git project with the structure showed in figure~\ref{fig:julia-module}
+
+\begin{figure}[htb]
+  \begin{center}
+    \includegraphics[width=4cm]{images/module-files.png}
+  \end{center}
+  \caption{Julia module structure}
+  \label{fig:julia-module}
+\end{figure}
+
+Source code must be in folder \texttt{src}, while in \texttt{test} folder there are module tests with a \texttt{runtests.jl} for executing them and with a \texttt{REQUIRE} file for specifying tests dependencies. For listing dependencies for the entire project, there is another REQUIRE file in main folder. As an example in figure~\ref{fig:require-example} there is the REQUIRE file for \texttt{ImagesToLARModel.jl}.
+
+\begin{figure}[htb]
+  \begin{center}
+    julia 0.3\\
+    JSON\\
+    Logging\\
+    PyCall\\
+    Images\\
+    Colors
+  \end{center}
+  \caption{REQUIRE contents for \texttt{ImagesToLARModel.jl}}
+  \label{fig:require-example}
+\end{figure}
+
+After creating this structure for a project it can be pushed on a git repository and installed on Julia systems. The usual installation procedure use this syntax:
+\begin{quote}
+ \texttt{Pkg.add("Package-name")}
+\end{quote}
+
+This will check for that package in METADATA.jl repository on github where there are all official Julia package. However it is also possible to install an unofficial package (on a public git repository) using this sintax:
+\begin{quote}
+ \texttt{Pkg.clone("git://repository-address.git")}
+\end{quote}
+
+This will install the package on your system with all the dependencies listed in REQUIRE file. 
+
+\subsection{Architecture of ImagesToLARModel}\label{sec:architecture}
+
+In previous section we have seen how to create a Julia package for distribute our application. Now we focus on the structure of our application. In \texttt{src} folder we can find the following modules:
+
+\begin{description}
+ \item \textbf{ImagesToLARModel.jl}: main module for the software, it takes input parameters and start images conversion
+ \item \textbf{ImagesConvertion.jl}: it is called by \texttt{ImagesToLARModel.jl} module and controls the entire conversion process calling all other modules
+ \item \textbf{GenerateBorderMatrix.jl}: it generates the boundary operator for grid specified in input, saving it in a JSON file
+ \item \textbf{PngStack2Array3dJulia.jl}: it is responsible of images loading and conversion into computable data
+ \item \textbf{Lar2Julia.jl}: it contains a small subset of LAR functions written in Julia language
+ \item \textbf{LARUtils.jl}: it contains utility functions for manipulation of LAR models
+ \item \textbf{Model2Obj.jl}: it contains function that manipulates obj files
+ \item \textbf{larcc.py}: python larcc module for boundary computation. In next releases of the software it will be rewritten in Julia language
+\end{description}
+
+In figure~\ref{fig:architecture} there is a simple schema of dependencies between modules.
+
+\begin{figure}[htb]
+  \begin{center}
+    \includegraphics[width=16cm]{images/architecture.png}
+  \end{center}
+  \caption{Schema of module dependencies of ImagesToLARModel}
+  \label{fig:architecture}
+\end{figure}
+
+
+Next sections of this document will explain in details all these modules showing also the code involved in conversion
+
+
+%-------------------------------------------------------------------------------
+%===============================================================================
+\section{ImagesToLARModel}\label{sec:ImagesToLARModel}
+%===============================================================================
+
+This is the main module for the application; it takes the input data and start conversion calling \texttt{ImagesConvertion.jl}.
+
+\subsection{Calling modules}\label{sec:modules}
+
+As we have already said, this first module has the responsibility of starting the conversion calling all other modules in the package. In Julia calling modules requires that they are in a path specified by \texttt{LOAD\_PATH} array.
+So at the beginning of this module we need to add this line:
+
+@D update load path
+@{push!(LOAD_PATH, Pkg.dir("ImagesToLARModel/src"))
+@}
+
+\texttt{Pkg.dir()} function gives us the path of the Julia installation, so \texttt{Pkg.dir("ImagesToLARModel/src")} returns $``\langle Julia-path\rangle /ImagesToLARModel/src"$
+
+After this line we can now import all modules defined here and export public functions:
+
+@D modules import ImagesToLARModel
+@{import JSON
 import ImagesConvertion
 
 using Logging
 
 export convertImagesToLARModel
 
-function loadConfiguration(configurationFile)
+@}
+
+\subsection{Input loading}\label{sec:input}
+
+Images conversion takes several parameters:
+
+\begin{itemize}
+ \item inputDirectory: The path of the directory containing the stack of images
+ \item outputDirectory: The path of the directory containing the output
+ \item bestImage: Image chosen for centroid computation (see section~\ref{sec:PngStack2Array3dJulia})
+ \item nx, ny, nz: Sizes of the grid chosen for image segmentation (see section~\ref{sec:PngStack2Array3dJulia})
+ \item DEBUG\_LEVEL: Debug level for Julia logger
+ \item parallelMerge (experimental): Choose between sequential or parallel merge of files (see section~\ref{sec:Model2Obj})
+\end{itemize}
+
+Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
+
+@D load JSON configuration
+@{function loadConfiguration(configurationFile)
   """
   load parameters from JSON file
 
@@ -99,24 +216,60 @@ function loadConfiguration(configurationFile)
     parallelMerge = false
   end
 
-  return configuration["inputDirectory"], configuration["outputDirectory"], configuration["bestImage"],
+  return configuration["inputDirectory"], configuration["outputDirectory"],
+	configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
-        DEBUG_LEVELS[configuration["DEBUG_LEVEL"]]
+        DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
+        parallelMerge
 
 end
+@}
 
-function convertImagesToLARModel(configurationFile)
+A valid JSON file has the following structure:
+\begin{tabbing}
+\{ \= \\
+\>  ``inputDirectory": "Path of the input directory",\\
+\>  ``outputDirectory": "Path of the output directory",\\
+\>  ``bestImage": "Name of the best image (with extension) ",\\
+\>  ``nx": x grid size,\\
+\>  ``ny": y grid size,\\
+\>  ``nz": border z,\\
+\>  ``DEBUG\_LEVEL": julia Logging level (can be a number from 1 to 5)\\
+\>  ``parallelMerge": "true" or "false" \\
+\}\\
+\end{tabbing}
+
+As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number from 1 to 5. Instead, when we explicitly define parameters, DEBUG\_LEVEL can only be one of the following Julia constants:
+
+\begin{itemize}
+ \item DEBUG
+ \item INFO
+ \item WARNING
+ \item ERROR
+ \item CRITICAL
+\end{itemize}
+
+\subsection{Starting conversion}\label{sec:input}
+
+As we have already said, this module has the only responsibility to collect data input and starts other modules. These are the functions that start the process and the only exposed to the application users:
+
+@D Start conversion from JSON file
+@{function convertImagesToLARModel(configurationFile)
   """
   Start convertion of a stack of images into a 3D model
   loading parameters from a JSON configuration file
 
   configurationFile: Path of the configuration file
   """
-  inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL = loadConfiguration(open(configurationFile))
-  convertImagesToLARModel(inputDirectory, outputDirectory, bestImage, nx, ny, nz, DEBUG_LEVEL)
+  inputDirectory, outputDirectory, bestImage, nx, ny, nz,
+      DEBUG_LEVEL, parallelMerge = loadConfiguration(open(configurationFile))
+  convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
+			nx, ny, nz, DEBUG_LEVEL, parallelMerge)
 end
+@}
 
-function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
+@D Start manual conversion
+@{function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
                                  nx, ny, nz, DEBUG_LEVEL = INFO, parallelMerge = false)
   """
   Start convertion of a stack of images into a 3D model
@@ -139,8 +292,63 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
   end
 
   Logging.configure(level=DEBUG_LEVEL)
-  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory, parallelMerge)
+  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage,
+	  inputDirectory, outputDirectory, parallelMerge)
 end
+@}
+
+%-------------------------------------------------------------------------------
+
+%-------------------------------------------------------------------------------
+%===============================================================================
+\section{PngStack2Array3dJulia}\label{sec:PngStack2Array3dJulia}
+%===============================================================================
+
+\subsection{Julia packages}\label{sec:juliaPkg}
+
+%-------------------------------------------------------------------------------
+
+%-------------------------------------------------------------------------------
+%===============================================================================
+\section{ImagesToLARModel}\label{sec:ImagesToLARModel}
+%===============================================================================
+
+\subsection{Julia packages}\label{sec:juliaPkg}
+
+%-------------------------------------------------------------------------------
+
+%-------------------------------------------------------------------------------
+%===============================================================================
+\section{ImagesToLARModel}\label{sec:ImagesToLARModel}
+%===============================================================================
+
+\subsection{Julia packages}\label{sec:juliaPkg}
+
+%-------------------------------------------------------------------------------
+
+%-------------------------------------------------------------------------------
+%===============================================================================
+\section{ImagesToLARModel}\label{sec:ImagesToLARModel}
+%===============================================================================
+
+\subsection{Julia packages}\label{sec:juliaPkg}
+
+%-------------------------------------------------------------------------------
+
+%-------------------------------------------------------------------------------
+\section{Exporting the library}
+%-------------------------------------------------------------------------------
+
+\paragraph{ImagesToLARModel}
+@O src/ImagesToLARModel.jl
+@{module ImagesToLARModel
+
+@< update load path @>
+
+@< modules import ImagesToLARModel @>
+@< load JSON configuration @>
+@< Start conversion from JSON file @>
+@< Start manual conversion @>
 end
 @}
 
