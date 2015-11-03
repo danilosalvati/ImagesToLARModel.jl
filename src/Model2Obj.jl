@@ -97,11 +97,11 @@ function mergeObj(modelDirectory)
 
   # Removing all tmp files
   for vtx_file in vertices_files
-    #rm(string(modelDirectory, "/", vtx_file))
+    rm(string(modelDirectory, "/", vtx_file))
   end
 
   for fcs_file in faces_files
-    #rm(string(modelDirectory, "/", fcs_file))
+    rm(string(modelDirectory, "/", fcs_file))
   end
 
 end
@@ -375,6 +375,40 @@ function mergeAndRemoveDuplicates(firstPath, secondPath)
   end
 end
 
+function mergeBoundariesProcess(modelDirectory, startImage, endImage,
+                                imageDx, imageDy,
+                                imageWidth, imageHeight)
+  """
+  Helper function for mergeBoundaries.
+  It is executed on different processes
+  
+  modelDirectory: Directory containing model files
+  startImage: Block start image 
+  endImage: Block end image
+  imageDx, imageDy: x and y sizes of the grid
+  imageWidth, imageHeight: Width and Height of the image
+  """
+  for xBlock in 0:(imageHeight / imageDx - 1)
+    for yBlock in 0:(imageWidth / imageDy - 1)
+
+      # Merging right Boundary
+      firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+      secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1, "_", startImage, "_", endImage)
+      mergeAndRemoveDuplicates(firstPath, secondPath)
+
+      # Merging top boundary
+      firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+      secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
+      mergeAndRemoveDuplicates(firstPath, secondPath)
+
+      # Merging front boundary
+      firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+      secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
+      mergeAndRemoveDuplicates(firstPath, secondPath)
+    end
+  end
+end
+
 function mergeBoundaries(modelDirectory,
                          imageHeight, imageWidth, imageDepth,
                          imageDx, imageDy, imageDz)
@@ -397,28 +431,10 @@ function mergeBoundaries(modelDirectory,
   for zBlock in 0:(imageDepth / imageDz - 1)
     startImage = endImage
     endImage = startImage + imageDz
-    for xBlock in 0:(imageHeight / imageDx - 1)
-      for yBlock in 0:(imageWidth / imageDy - 1)
-
-        # Merging right Boundary
-        firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1, "_", startImage, "_", endImage)
-        task1 = @spawn mergeAndRemoveDuplicates(firstPath, secondPath)
-
-        # Merging top boundary
-        firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
-        task2 = @spawn mergeAndRemoveDuplicates(firstPath, secondPath)
-
-        # Merging front boundary
-        firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
-        task3 = @spawn mergeAndRemoveDuplicates(firstPath, secondPath)
-
-        push!(tasks, task1, task2, task3)
-
-      end
-    end
+    task = @spawn mergeBoundariesProcess(modelDirectory, startImage, endImage,
+                           imageDx, imageDy,
+                           imageWidth, imageHeight)
+    push!(tasks, task)
   end
 
   # Waiting for tasks

@@ -304,34 +304,40 @@ end
 \section{PngStack2Array3dJulia}\label{sec:PngStack2Array3dJulia}
 %===============================================================================
 
-\subsection{Julia packages}\label{sec:juliaPkg}
+%-------------------------------------------------------------------------------
+
+%-------------------------------------------------------------------------------
+%===============================================================================
+\section{ImagesConvertion}\label{sec:ImagesConvertion}
+%===============================================================================
 
 %-------------------------------------------------------------------------------
 
 %-------------------------------------------------------------------------------
 %===============================================================================
-\section{ImagesToLARModel}\label{sec:ImagesToLARModel}
+\section{GenerateBorderMatrix}\label{sec:GenerateBorderMatrix}
 %===============================================================================
-
-\subsection{Julia packages}\label{sec:juliaPkg}
 
 %-------------------------------------------------------------------------------
 
 %-------------------------------------------------------------------------------
 %===============================================================================
-\section{ImagesToLARModel}\label{sec:ImagesToLARModel}
+\section{Lar2Julia}\label{sec:Lar2Julia}
 %===============================================================================
-
-\subsection{Julia packages}\label{sec:juliaPkg}
 
 %-------------------------------------------------------------------------------
 
 %-------------------------------------------------------------------------------
 %===============================================================================
-\section{ImagesToLARModel}\label{sec:ImagesToLARModel}
+\section{LARUtils}\label{sec:LARUtils}
 %===============================================================================
 
-\subsection{Julia packages}\label{sec:juliaPkg}
+%-------------------------------------------------------------------------------
+
+%-------------------------------------------------------------------------------
+%===============================================================================
+\section{Model2Obj}\label{sec:Model2Obj}
+%===============================================================================
 
 %-------------------------------------------------------------------------------
 
@@ -352,6 +358,7 @@ end
 end
 @}
 
+\paragraph{ImagesConvertion}
 @O src/ImagesConvertion.jl
 @{module ImagesConvertion
 
@@ -457,7 +464,6 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
                            centroidsCalc, boundaryMat)
 
     push!(tasks, task)
-
   end
 
   # Waiting for tasks completion
@@ -523,7 +529,7 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         end
       end
 
-      nx, ny, nz = size(image)
+      nz, nx, ny = size(image)
       chains3D = Array(Uint8, 0)
       zStart = startImage - beginImageStack
       for y in 0:(nx - 1)
@@ -622,6 +628,7 @@ end
 end
 @}
 
+\paragraph{GenerateBorderMatrix}
 
 @O src/GenerateBorderMatrix.jl
 @{module GenerateBorderMatrix
@@ -704,6 +711,7 @@ end
 end
 @}
 
+\paragraph{Lar2Julia}
 
 @O src/Lar2Julia.jl
 @{module Lar2Julia
@@ -789,6 +797,8 @@ function cscChainToCellList(CSCm)
 end
 end
 @}
+
+\paragraph{LARUtils}
 
 @O src/LARUtils.jl
 @{module LARUtils
@@ -1265,6 +1275,7 @@ end
 end
 @}
 
+\paragraph{Model2Obj}
 
 @O src/Model2Obj.jl
 @{module Model2Obj
@@ -1366,11 +1377,11 @@ function mergeObj(modelDirectory)
 
   # Removing all tmp files
   for vtx_file in vertices_files
-    #rm(string(modelDirectory, "/", vtx_file))
+    rm(string(modelDirectory, "/", vtx_file))
   end
 
   for fcs_file in faces_files
-    #rm(string(modelDirectory, "/", fcs_file))
+    rm(string(modelDirectory, "/", fcs_file))
   end
 
 end
@@ -1644,6 +1655,40 @@ function mergeAndRemoveDuplicates(firstPath, secondPath)
   end
 end
 
+function mergeBoundariesProcess(modelDirectory, startImage, endImage,
+                                imageDx, imageDy,
+                                imageWidth, imageHeight)
+  """
+  Helper function for mergeBoundaries.
+  It is executed on different processes
+  
+  modelDirectory: Directory containing model files
+  startImage: Block start image 
+  endImage: Block end image
+  imageDx, imageDy: x and y sizes of the grid
+  imageWidth, imageHeight: Width and Height of the image
+  """
+  for xBlock in 0:(imageHeight / imageDx - 1)
+    for yBlock in 0:(imageWidth / imageDy - 1)
+
+      # Merging right Boundary
+      firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+      secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1, "_", startImage, "_", endImage)
+      mergeAndRemoveDuplicates(firstPath, secondPath)
+
+      # Merging top boundary
+      firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+      secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
+      mergeAndRemoveDuplicates(firstPath, secondPath)
+
+      # Merging front boundary
+      firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+      secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
+      mergeAndRemoveDuplicates(firstPath, secondPath)
+    end
+  end
+end
+
 function mergeBoundaries(modelDirectory,
                          imageHeight, imageWidth, imageDepth,
                          imageDx, imageDy, imageDz)
@@ -1666,28 +1711,10 @@ function mergeBoundaries(modelDirectory,
   for zBlock in 0:(imageDepth / imageDz - 1)
     startImage = endImage
     endImage = startImage + imageDz
-    for xBlock in 0:(imageHeight / imageDx - 1)
-      for yBlock in 0:(imageWidth / imageDy - 1)
-
-        # Merging right Boundary
-        firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1, "_", startImage, "_", endImage)
-        task1 = @@spawn mergeAndRemoveDuplicates(firstPath, secondPath)
-
-        # Merging top boundary
-        firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
-        task2 = @@spawn mergeAndRemoveDuplicates(firstPath, secondPath)
-
-        # Merging front boundary
-        firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
-        task3 = @@spawn mergeAndRemoveDuplicates(firstPath, secondPath)
-
-        push!(tasks, task1, task2, task3)
-
-      end
-    end
+    task = @@spawn mergeBoundariesProcess(modelDirectory, startImage, endImage,
+                           imageDx, imageDy,
+                           imageWidth, imageHeight)
+    push!(tasks, task)
   end
 
   # Waiting for tasks
@@ -1698,6 +1725,7 @@ end
 end
 @}
 
+\paragraph{PngStack2Array3dJulia}
 
 @O src/PngStack2Array3dJulia.jl
 @{module PngStack2Array3dJulia
@@ -1906,9 +1934,6 @@ function convertImages(inputPath, outputPath, bestImage)
 end
 end
 @}
-
-
-
 
 %===============================================================================
 \subsection{Installing the library}

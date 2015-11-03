@@ -102,7 +102,6 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
                            centroidsCalc, boundaryMat)
 
     push!(tasks, task)
-
   end
 
   # Waiting for tasks completion
@@ -168,7 +167,7 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         end
       end
 
-      nx, ny, nz = size(image)
+      nz, nx, ny = size(image)
       chains3D = Array(Uint8, 0)
       zStart = startImage - beginImageStack
       for y in 0:(nx - 1)
