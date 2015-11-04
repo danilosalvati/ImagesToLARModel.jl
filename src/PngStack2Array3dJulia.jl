@@ -37,6 +37,8 @@ function convertImages(inputPath, outputPath, bestImage)
   imageNumber = 0
   for imageFile in imageFiles
     img = imread(string(inputPath, imageFile))
+    rgb_img = convert(Image{ColorTypes.RGB}, img)
+    gray_img = convert(Image{ColorTypes.Gray}, rgb_img) 
     # resizing images if they do not have even dimensions
     dim = size(img)
     if(dim[1] % 2 != 0)
@@ -53,11 +55,9 @@ function convertImages(inputPath, outputPath, bestImage)
       yrange = 1: dim[2]
     end
 
-    img = subim(img, xrange, yrange) 
+    img = subim(gray_img, xrange, yrange) 
     outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end],
                               imageNumber,".png")
-    rgb_img = convert(Image{ColorTypes.RGB}, img)
-    gray_img = convert(Image{ColorTypes.Gray}, rgb_img) 
     imwrite(img, outputFilename)
 
     # Searching the best image
@@ -71,9 +71,18 @@ function convertImages(inputPath, outputPath, bestImage)
 
   # Adding another image if they are odd
   if(numberOfImages % 2 != 0)
-    debug("Odd images, adding one")
-    bestImage = imread(string(outputPath, "/", newBestImage))
-    imArray = zeros(Uint8, size(bestImage))
+    debug("Odd images, adding one")  
+    imageWidth, imageHeight = getImageData(string(outputPath, "/", newBestImage))
+    
+    if(imageWidth % 2 != 0)
+      imageWidth -= 1
+    end
+    
+    if(imageHeight % 2 != 0)
+      imageHeight -= 1
+    end  
+    
+    imArray = zeros(Uint8, (imageWidth, imageHeight))
     img = grayim(imArray)
     outputFilename = string(outputPath, "/", 
                         outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
@@ -83,18 +92,16 @@ function convertImages(inputPath, outputPath, bestImage)
   return newBestImage
 end
 
-
-
 function getImageData(imageFile)
   """
-  Get width and heigth from a png image
+  Get width and height from a png image
   """
 
   input = open(imageFile, "r")
   data = readbytes(input, 24)
-
-  if (data[2:4] != [80, 78, 71] && data[13:16] != [73, 72, 68, 82])
-    error("This is not a png image")
+  
+  if (convert(Array{Int},data[1:8]) != reshape([137 80 78 71 13 10 26 10],8))
+    error("This is not a valid png image")
   end
 
   w = data[17:20]
@@ -120,9 +127,7 @@ function calculateClusterCentroids(path, image, numberOfClusters = 2)
 
   img = imread(imageFilename) # Open png image with Julia Package
 
-  rgb_img = convert(Image{ColorTypes.RGB}, img)
-  gray_img = convert(Image{ColorTypes.Gray}, rgb_img)
-  imArray = raw(gray_img)
+  imArray = raw(img)
 
   imageWidth = size(imArray)[1]
   imageHeight = size(imArray)[2]
@@ -134,15 +139,11 @@ function calculateClusterCentroids(path, image, numberOfClusters = 2)
   push!(image3d, imArray)
   pixel = reshape(image3d[1], (imageWidth * imageHeight), 1)
 
-  # Segmenting image using kmeans
-  # https://en.wikipedia.org/wiki/Image_segmentation#Clustering_methods
-
   centroids,_ = cluster.kmeans(pixel, numberOfClusters)
 
   return centroids
 
 end
-
 
 function pngstack2array3d(path, minSlice, maxSlice, centroids)
   """
@@ -164,11 +165,7 @@ function pngstack2array3d(path, minSlice, maxSlice, centroids)
     imageFilename = string(path, files[slice + 1])
     debug("image name: ", imageFilename)
     img = imread(imageFilename) # Open png image with Julia Package
-
-    # Converting image in grayscale
-    rgb_img = convert(Image{ColorTypes.RGB}, img)
-    gray_img = convert(Image{ColorTypes.Gray}, rgb_img)
-    imArray = raw(gray_img) # Putting pixel values into RAW 3d array
+    imArray = raw(img) # Putting pixel values into RAW 3d array 
     debug("imArray size: ", size(imArray))
 
     # Inserting page on another list and reshaping
@@ -180,7 +177,7 @@ function pngstack2array3d(path, minSlice, maxSlice, centroids)
   for page in 1:length(image3d)
 
     # Denoising
-    image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT)
+    image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT) 
 
     # Image Quantization
     debug("page = ", page)
@@ -201,10 +198,11 @@ function pngstack2array3d(path, minSlice, maxSlice, centroids)
       end
     end
 
-    image3d[page] = tmp
+    image3d[page] = tmp 
 
   end
 
   return image3d
 end
+
 end

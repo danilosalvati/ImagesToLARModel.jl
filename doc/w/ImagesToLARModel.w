@@ -246,6 +246,20 @@ A valid JSON file has the following structure:
 \}\\
 \end{tabbing}
 
+For example, we can write:
+
+\begin{tabbing}
+\{ \= \\
+\>  ``inputDirectory": ''/home/juser/IMAGES/``\\
+\>  ``outputDirectory": ''/home/juser/OUTPUT/``,\\
+\>  ``bestImage": ''0009.tiff``,\\
+\>  ``nx": 2,\\
+\>  ``ny": 2,\\
+\>  ``nz": 2,\\
+\>  ``DEBUG\_LEVEL": 2\\
+\}\\
+\end{tabbing}
+
 As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number from 1 to 5. Instead, when we explicitly define parameters, DEBUG\_LEVEL can only be one of the following Julia constants:
 
 \begin{itemize}
@@ -355,9 +369,16 @@ end @}
     
 Next we need to open the single image doing the following operations:
 \begin{enumerate}
+ \item Open images using \texttt{Images} library (which relies on \texttt{ImageMagick}) and save them in greyscale png format 
  \item if one or both dimensions of the image are odd we need to remove one row (or column) of pixels to make it even. This will be more clear when we will introduce the grid for parallel computation (see section~\ref{sec:ImagesConvertion})
- \item after computing images boundaries, they can be opened using \texttt{Images} library (which relies on \texttt{ImageMagick}) and saved in greyscale png format 
 \end{enumerate}
+
+@D Greyscale conversion
+@{rgb_img = convert(Image{ColorTypes.RGB}, img)
+gray_img = convert(Image{ColorTypes.Gray}, rgb_img) @}
+    
+As we can see, we first need to convert image to RGB and then reconverting to greyscale. Without the RGB conversion these rows will return a stackoverflow error due to the presence of alpha channel
+
 
 @D Image resizing
 @{# resizing images if they do not have even dimensions
@@ -376,14 +397,8 @@ else
   yrange = 1: dim[2]
 end
 
-img = subim(img, xrange, yrange) @}
+img = subim(gray_img, xrange, yrange) @}
     
-
-@D Greyscale conversion
-@{rgb_img = convert(Image{ColorTypes.RGB}, img)
-gray_img = convert(Image{ColorTypes.Gray}, rgb_img) @}
-    
-As we can see, we first need to convert image to RGB and then reconverting to greyscale. Without the RGB conversion these rows will return a stackoverflow error due to the presence of alpha channel
 
 Next we just have to search for the best image and add one image if they are odd (for same reasons we need even image dimensions)
 
@@ -398,14 +413,25 @@ imageNumber += 1 @}
 @D Add one image
 @{# Adding another image if they are odd
 if(numberOfImages % 2 != 0)
-  debug("Odd images, adding one")
-  bestImage = imread(string(outputPath, "/", newBestImage))
-  imArray = zeros(Uint8, size(bestImage))
+  debug("Odd images, adding one")  
+  imageWidth, imageHeight = getImageData(string(outputPath, "/", newBestImage))
+  
+  if(imageWidth % 2 != 0)
+    imageWidth -= 1
+  end
+  
+  if(imageHeight % 2 != 0)
+    imageHeight -= 1
+  end  
+  
+  imArray = zeros(Uint8, (imageWidth, imageHeight))
   img = grayim(imArray)
   outputFilename = string(outputPath, "/", 
 		      outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
   imwrite(img, outputFilename)
 end @}
+
+Finally this is the code for the entire function:
 
 @D Convert to png
 @{function convertImages(inputPath, outputPath, bestImage)
@@ -429,10 +455,10 @@ end @}
   imageNumber = 0
   for imageFile in imageFiles
     img = imread(string(inputPath, imageFile))
+    @< Greyscale conversion @>
     @< Image resizing @>
     outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end],
 			      imageNumber,".png")
-    @< Greyscale conversion @>
     imwrite(img, outputFilename)
 
     @< Search for best image @>
@@ -542,8 +568,119 @@ This is the code used for centroid computation:
 end
 @}
 
-
 \subsection{Transform pixels to three-dimensional array}\label{sec:transformation}
+
+Now we can study the most important part of this module, where images are converted into data usable by other modules for the creation of the three-dimensional model. The basic concept consists in transforming every single pixel in an integer value representing color, and then clustering them all using centroids computed earlier. So, we can obtain a matrix containing only two values (the two centroids) representing background and foreground of the image.\\
+Now we will follow the code. This function uses four parameters
+
+\begin{itemize}
+ \item path: Path of the images directory
+ \item minSlice: First image to read
+ \item maxSlice: Last image to read
+ \item centroids: Array containing centroids for clustering
+\end{itemize}
+
+For every image we want to transform in the interval [minSlice, maxSlice) we have to read it from disk and save pixel informations into a multidimensional Array:
+
+@D Read raw data
+@{img = imread(imageFilename) # Open png image with Julia Package
+imArray = raw(img) # Putting pixel values into RAW 3d array @}
+
+The \texttt{Images.jl} \texttt{raw} function, get all pixel values saving them in an Array. In Figure~\ref{fig:rawImage} we can see how the array will be like for a sample greyscale image.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.27\linewidth]{images/grayscalesample.png}
+   \includegraphics[width=0.47\linewidth]{images/imArraypart.png} \\
+   
+   \includegraphics[width=0.67\linewidth]{images/imArrayfull.png} \hfill
+   \caption{Reading raw data from image. (a) Original greyscale image (b) A view of raw data array (c) The entire raw data array with main color highlighted}
+   \label{fig:rawImage}
+\end{figure}
+
+Next we have to reduce noise on the image. The better choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
+
+@D Reduce noise
+@{image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT) @}
+
+Where image3d is an array containing all raw data from images
+
+Finally we have to compute clusters (using \texttt{scipy}) obtaining images with only two values:
+
+@D Clustering images
+@{# Image Quantization
+debug("page = ", page)
+debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
+pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
+qnt,_ = cluster.vq(pixel,centroids)
+
+# Reshaping quantization result
+centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
+#centers_idx = reshape(qnt, size(image3d[page]))
+
+# Inserting quantized values into 3d image array
+tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
+
+for j in 1:size(image3d[1],2)
+  for i in 1:size(image3d[1],1)
+    tmp[i,j] = centroids[centers_idx[i,j] + 1]
+  end
+end
+
+image3d[page] = tmp @}
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.30\linewidth]{images/grayscalesample.png} \hfill
+   \includegraphics[width=0.30\linewidth]{images/denoised.png} \hfill
+   \includegraphics[width=0.30\linewidth]{images/quantized.png} \hfill
+   \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Quantized image}
+   \label{fig:rawImage}
+\end{figure}
+
+This is the complete code:
+
+@D Pixel transformation
+@{function pngstack2array3d(path, minSlice, maxSlice, centroids)
+  """
+  Import a stack of PNG images into a 3d array
+
+  path: path of images directory
+  minSlice and maxSlice: number of first and last slice
+  centroids: centroids for image segmentation
+  """
+
+  # image3d contains all images values
+  image3d = Array(Array{Uint8,2}, 0)
+
+  debug("maxSlice = ", maxSlice, " minSlice = ", minSlice)
+  files = readdir(path)
+
+  for slice in minSlice : (maxSlice - 1)
+    debug("slice = ", slice)
+    imageFilename = string(path, files[slice + 1])
+    debug("image name: ", imageFilename)
+    @< Read raw data @>
+    debug("imArray size: ", size(imArray))
+
+    # Inserting page on another list and reshaping
+    push!(image3d, imArray)
+
+  end
+
+  # Removing noise using a median filter and quantization
+  for page in 1:length(image3d)
+
+    # Denoising
+    @< Reduce noise @>
+
+    @< Clustering images @>
+
+  end
+
+  return image3d
+end
+@}
 
 %===============================================================================
 \section{ImagesConvertion}\label{sec:ImagesConvertion}
@@ -1956,130 +2093,9 @@ end
 
 @< modules import PngStack2Array3dJulia @>
 @< Convert to png @>
-
-
-function getImageData(imageFile)
-  """
-  Get width and heigth from a png image
-  """
-
-  input = open(imageFile, "r")
-  data = readbytes(input, 24)
-
-  if (data[2:4] != [80, 78, 71] && data[13:16] != [73, 72, 68, 82])
-    error("This is not a png image")
-  end
-
-  w = data[17:20]
-  h = data[21:24]
-
-  width = reinterpret(Int32, reverse(w))[1]
-  height = reinterpret(Int32, reverse(h))[1]
-
-  close(input)
-
-  return width, height
-end
-
-function calculateClusterCentroids(path, image, numberOfClusters = 2)
-  """
-  Loads an image and calculate cluster centroids for segmentation
-
-  path: Path of the image folder
-  image: name of the image
-  numberOfClusters: number of desidered clusters
-  """
-  imageFilename = string(path, image)
-
-  img = imread(imageFilename) # Open png image with Julia Package
-
-  rgb_img = convert(Image{ColorTypes.RGB}, img)
-  gray_img = convert(Image{ColorTypes.Gray}, rgb_img)
-  imArray = raw(gray_img)
-
-  imageWidth = size(imArray)[1]
-  imageHeight = size(imArray)[2]
-
-  # Getting pixel values and saving them with another shape
-  image3d = Array(Array{Uint8,2}, 0)
-
-  # Inserting page on another list and reshaping
-  push!(image3d, imArray)
-  pixel = reshape(image3d[1], (imageWidth * imageHeight), 1)
-
-  # Segmenting image using kmeans
-  # https://en.wikipedia.org/wiki/Image_segmentation#Clustering_methods
-
-  centroids,_ = cluster.kmeans(pixel, numberOfClusters)
-
-  return centroids
-
-end
-
-
-function pngstack2array3d(path, minSlice, maxSlice, centroids)
-  """
-  Import a stack of PNG images into a 3d array
-
-  path: path of images directory
-  minSlice and maxSlice: number of first and last slice
-  centroids: centroids for image segmentation
-  """
-
-  # image3d contains all images values
-  image3d = Array(Array{Uint8,2}, 0)
-
-  debug("maxSlice = ", maxSlice, " minSlice = ", minSlice)
-  files = readdir(path)
-
-  for slice in minSlice : (maxSlice - 1)
-    debug("slice = ", slice)
-    imageFilename = string(path, files[slice + 1])
-    debug("image name: ", imageFilename)
-    img = imread(imageFilename) # Open png image with Julia Package
-
-    # Converting image in grayscale
-    rgb_img = convert(Image{ColorTypes.RGB}, img)
-    gray_img = convert(Image{ColorTypes.Gray}, rgb_img)
-    imArray = raw(gray_img) # Putting pixel values into RAW 3d array
-    debug("imArray size: ", size(imArray))
-
-    # Inserting page on another list and reshaping
-    push!(image3d, imArray)
-
-  end
-
-  # Removing noise using a median filter and quantization
-  for page in 1:length(image3d)
-
-    # Denoising
-    image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT)
-
-    # Image Quantization
-    debug("page = ", page)
-    debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
-    pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-    qnt,_ = cluster.vq(pixel,centroids)
-
-    # Reshaping quantization result
-    centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
-    #centers_idx = reshape(qnt, size(image3d[page]))
-
-    # Inserting quantized values into 3d image array
-    tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
-
-    for j in 1:size(image3d[1],2)
-      for i in 1:size(image3d[1],1)
-        tmp[i,j] = centroids[centers_idx[i,j] + 1]
-      end
-    end
-
-    image3d[page] = tmp
-
-  end
-
-  return image3d
-end
+@< Get image data @>
+@< Centroid computation @>
+@< Pixel transformation @>
 end
 @}
 
