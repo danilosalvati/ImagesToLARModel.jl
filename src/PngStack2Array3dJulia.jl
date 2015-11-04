@@ -1,7 +1,5 @@
 module PngStack2Array3dJulia
 
-export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
-
 using Images # For loading png images
 using Colors # For grayscale images
 using PyCall # For including python clustering
@@ -10,6 +8,82 @@ using Logging
 @pyimport scipy.cluster.vq as cluster
 
 NOISE_SHAPE_DETECT=10
+
+export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
+
+function convertImages(inputPath, outputPath, bestImage)
+  """
+  Get all images contained in inputPath directory
+  saving them in outputPath directory in png format.
+  If images have one of two odd dimensions, they will be resized
+  and if folder contains an odd number of images another one will be
+  added
+
+  inputPath: Directory containing input images
+  outputPath: Temporary directory containing png images
+  bestImage: Image chosen for centroids computation
+
+  Returns the new name for the best image
+  """
+
+  imageFiles = readdir(inputPath)
+  numberOfImages = length(imageFiles)
+  outputPrefix = ""
+  for i in 1: length(string(numberOfImages)) - 1
+    outputPrefix = string(outputPrefix,"0")
+  end 
+  
+  newBestImage = ""
+  imageNumber = 0
+  for imageFile in imageFiles
+    img = imread(string(inputPath, imageFile))
+    # resizing images if they do not have even dimensions
+    dim = size(img)
+    if(dim[1] % 2 != 0)
+      debug("Image has odd x; resizing")
+      xrange = 1: dim[1] - 1
+    else
+      xrange = 1: dim[1]
+    end
+
+    if(dim[2] % 2 != 0)
+      debug("Image has odd y; resizing")
+      yrange = 1: dim[2] - 1
+    else
+      yrange = 1: dim[2]
+    end
+
+    img = subim(img, xrange, yrange) 
+    outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end],
+                              imageNumber,".png")
+    rgb_img = convert(Image{ColorTypes.RGB}, img)
+    gray_img = convert(Image{ColorTypes.Gray}, rgb_img) 
+    imwrite(img, outputFilename)
+
+    # Searching the best image
+    if(imageFile == bestImage)
+      newBestImage = string(outputPrefix[length(string(imageNumber)):end],
+                                imageNumber,".png")
+    end
+    imageNumber += 1 
+
+  end
+
+  # Adding another image if they are odd
+  if(numberOfImages % 2 != 0)
+    debug("Odd images, adding one")
+    bestImage = imread(string(outputPath, "/", newBestImage))
+    imArray = zeros(Uint8, size(bestImage))
+    img = grayim(imArray)
+    outputFilename = string(outputPath, "/", 
+                        outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
+    imwrite(img, outputFilename)
+  end 
+
+  return newBestImage
+end
+
+
 
 function getImageData(imageFile)
   """
@@ -132,74 +206,5 @@ function pngstack2array3d(path, minSlice, maxSlice, centroids)
   end
 
   return image3d
-end
-
-function convertImages(inputPath, outputPath, bestImage)
-  """
-  Get all images contained in inputPath directory
-  saving them in outputPath directory in png format.
-  If images have one of two odd dimensions, they will be resized
-  and if folder contains an odd number of images another one will be
-  added
-
-  inputPath: Directory containing input images
-  outputPath: Temporary directory containing png images
-  bestImage: Image chosen for centroids computation
-
-  Returns the new name for the best image
-  """
-
-  imageFiles = readdir(inputPath)
-  numberOfImages = length(imageFiles)
-  outputPrefix = ""
-  for i in 1: length(string(numberOfImages)) - 1
-    outputPrefix = string(outputPrefix,"0")
-  end
-
-  newBestImage = ""
-  imageNumber = 0
-  for imageFile in imageFiles
-    img = imread(string(inputPath, imageFile))
-
-    # resizing images if they do not have even dimensions
-    dim = size(img)
-    if(dim[1] % 2 != 0)
-      debug("Image has odd x; resizing")
-      xrange = 1: dim[1] - 1
-    else
-      xrange = 1: dim[1]
-    end
-
-    if(dim[2] % 2 != 0)
-      debug("Image has odd y; resizing")
-      yrange = 1: dim[2] - 1
-    else
-      yrange = 1: dim[2]
-    end
-
-    img = subim(img, xrange, yrange)
-
-    outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
-    imwrite(img, outputFilename)
-
-    # Searching the best image
-    if(imageFile == bestImage)
-      newBestImage = string(outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
-    end
-
-    imageNumber += 1
-  end
-
-  # Adding another image if they are odd
-  if(numberOfImages % 2 != 0)
-    debug("Odd images, adding one")
-    bestImage = imread(string(outputPath, "/", newBestImage))
-    imArray = zeros(Uint8, size(bestImage))
-    img = grayim(imArray)
-    outputFilename = string(outputPath, "/", outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
-    imwrite(img, outputFilename)
-  end
-
-  return newBestImage
 end
 end

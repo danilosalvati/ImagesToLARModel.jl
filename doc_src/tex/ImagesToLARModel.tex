@@ -50,7 +50,7 @@
 \begin{abstract}
 Here we will present a software for creating a three-dimensional model from a stack of images. This can be useful because of the simplicity of these type of representations. In particular a scope of use can be offered by medicine, where there is an enormous number of images but with very complex two-dimensional representations.\\
 
-This work will use the LAR representation with the Julia language (\cite{cclar-proj:2013:00}), because of its simplicity, showing how it can be used for quickly process image data.
+This work will use the LAR representation (\cite{cclar-proj:2013:00}) with the Julia language, because of its simplicity, showing how it can be used for quickly process image data.
 
 \end{abstract}
 
@@ -63,10 +63,17 @@ This work will use the LAR representation with the Julia language (\cite{cclar-p
 \section{Introduction}\label{sec:intro}
 %===============================================================================
 
-This work has the objective of transforming a two-dimensional representation of a model (based on a stack of images) into a three-dimensional representation based on the LAR schema. In particular, it will produce a single obj model which can be viewed with standard graphics software.\\
+This work has the aim to transform a two-dimensional representation of a model (based on a stack of images) into a three-dimensional representation based on the LAR schema. In particular, it will produce a single obj model which can be viewed with standard graphics softwares.\\
 
-The biggest problem we will face is lack of memory. In fact, our aim is to get a very large stack of images (so with the maximum possible resolution) and convert them. However biomedical images used in research are very big so we cannot save them entirely in memory. The idea used here is the same of existing software based on LAR schema (\cite{paodcvjcadanda2015}) with the introduction of parallelism layer, transforming only little parts of images obtaining models to merge in final result file.
-A typical hardware environment for this software is a cluster of computers, where processes (which convert images portions) are distributed among different machines.
+In the past were developed other softwares using same principles (see~\cite{paodcvjcadanda2015}). However, they were optimized for speed and cannot be able to accept huge amounts of data. With the rise of the big data era, we now have more and more data available for research purposes, so softwares must be able to deal with them. A typical hardware environment is based on a cluster of computers where computation can be distributed among a lot of different processes. However, as stated by \textit{Amdahl's law}, the speedup of a program using multiple processors is limited by the time needed for the sequential fraction of the program. So use of parallel techniques for dealing with big data is not important for time performance gain but for memory space gain. In fact, our biggest problem is lack of memory, due to model sizes. As a consequence, every parts of this software is written with the clear objective of minimizing memory usage at the cost of losing something in terms of time performance. So, for example, images will be converted in blocks determined by a grid size (see section~\ref{sec:ImagesConvertion}) among different processes and different machines of the cluster
+
+\begin{figure}[htb]
+  \begin{center}
+    \includegraphics[width=8cm]{images/AmdahlsLaw.png}
+  \end{center}
+  \caption{Amdahl's law}
+  \label{fig:Amdahl}
+\end{figure}
 
 \subsection{Why Julia}\label{sec:julia}
 Ricordare che precedenti versioni erano in python\\
@@ -297,53 +304,272 @@ end
 end
 @}
 
-%-------------------------------------------------------------------------------
-
-%-------------------------------------------------------------------------------
 %===============================================================================
 \section{PngStack2Array3dJulia}\label{sec:PngStack2Array3dJulia}
 %===============================================================================
 
-%-------------------------------------------------------------------------------
+This module has the responsibility of convert a png image into an array of values
+that will be passed to other modules
 
-%-------------------------------------------------------------------------------
+\subsection{Module imports}\label{sec:imports}
+These are modules needed for this part of the package and the public functions exported
+
+@D modules import PngStack2Array3dJulia
+@{using Images # For loading png images
+using Colors # For grayscale images
+using PyCall # For including python clustering
+using Logging
+@@pyimport scipy.ndimage as ndimage
+@@pyimport scipy.cluster.vq as cluster
+
+NOISE_SHAPE_DETECT=10
+
+export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
+@}
+
+We need \texttt{Images} and \texttt{Colors} packages for manipulating png images and \texttt{PyCall} for using Python functions for clustering and filtering images.
+As a consequence, we need a python environment with \texttt{scipy} to be able to run the package
+
+\subsection{Convert input to png}\label{sec:convertPNG}
+
+First thing to do in our program is getting our input folder and convert the stack of images into png format. This process lets us to avoid managing an enormous variety of formats during computation, simplifying code used for transformation.\\
+
+Convertion needs the following parameters:
+\begin{itemize}
+ \item inputPath: path of the folder containing the original images
+ \item outputPath: path where we will save png images
+ \item bestImage: name of the image chosen for centroids computing (see section~\ref{sec:centroids})
+\end{itemize}
+
+After conversion \textit{outputPath} will contain our png images and the function will return the new name chosen for the best image.\\
+
+Now we can examine single parts of conversion process. First of all we need to specify a new name for images, keeping the right order between them; so we need to define a prefix based on number of images:
+
+@D Define string prefix
+@{imageFiles = readdir(inputPath)
+numberOfImages = length(imageFiles)
+outputPrefix = ""
+for i in 1: length(string(numberOfImages)) - 1
+  outputPrefix = string(outputPrefix,"0")
+end @}
+    
+Next we need to open the single image doing the following operations:
+\begin{enumerate}
+ \item if one or both dimensions of the image are odd we need to remove one row (or column) of pixels to make it even. This will be more clear when we will introduce the grid for parallel computation (see section~\ref{sec:ImagesConvertion})
+ \item after computing images boundaries, they can be opened using \texttt{Images} library (which relies on \texttt{ImageMagick}) and saved in greyscale png format 
+\end{enumerate}
+
+@D Image resizing
+@{# resizing images if they do not have even dimensions
+dim = size(img)
+if(dim[1] % 2 != 0)
+  debug("Image has odd x; resizing")
+  xrange = 1: dim[1] - 1
+else
+  xrange = 1: dim[1]
+end
+
+if(dim[2] % 2 != 0)
+  debug("Image has odd y; resizing")
+  yrange = 1: dim[2] - 1
+else
+  yrange = 1: dim[2]
+end
+
+img = subim(img, xrange, yrange) @}
+    
+
+@D Greyscale conversion
+@{rgb_img = convert(Image{ColorTypes.RGB}, img)
+gray_img = convert(Image{ColorTypes.Gray}, rgb_img) @}
+    
+As we can see, we first need to convert image to RGB and then reconverting to greyscale. Without the RGB conversion these rows will return a stackoverflow error due to the presence of alpha channel
+
+Next we just have to search for the best image and add one image if they are odd (for same reasons we need even image dimensions)
+
+@D Search for best image
+@{# Searching the best image
+if(imageFile == bestImage)
+  newBestImage = string(outputPrefix[length(string(imageNumber)):end],
+			    imageNumber,".png")
+end
+imageNumber += 1 @}
+    
+@D Add one image
+@{# Adding another image if they are odd
+if(numberOfImages % 2 != 0)
+  debug("Odd images, adding one")
+  bestImage = imread(string(outputPath, "/", newBestImage))
+  imArray = zeros(Uint8, size(bestImage))
+  img = grayim(imArray)
+  outputFilename = string(outputPath, "/", 
+		      outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
+  imwrite(img, outputFilename)
+end @}
+
+@D Convert to png
+@{function convertImages(inputPath, outputPath, bestImage)
+  """
+  Get all images contained in inputPath directory
+  saving them in outputPath directory in png format.
+  If images have one of two odd dimensions, they will be resized
+  and if folder contains an odd number of images another one will be
+  added
+
+  inputPath: Directory containing input images
+  outputPath: Temporary directory containing png images
+  bestImage: Image chosen for centroids computation
+
+  Returns the new name for the best image
+  """
+
+  @< Define string prefix @>
+  
+  newBestImage = ""
+  imageNumber = 0
+  for imageFile in imageFiles
+    img = imread(string(inputPath, imageFile))
+    @< Image resizing @>
+    outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end],
+			      imageNumber,".png")
+    @< Greyscale conversion @>
+    imwrite(img, outputFilename)
+
+    @< Search for best image @>
+
+  end
+
+  @< Add one image @>
+
+  return newBestImage
+end
+@}
+
+\subsection{Getting data from a png}\label{sec:getData}
+
+Now we need to load information data from png images. In particular we are interested in getting width and height of an image. As stated in~\cite{W3CPNG} document, a standard PNG file contains a \textit{signature} followed by a sequence of \textit{chunks} (each one with a specific type).\\
+
+The signature always contain the following values:
+
+\begin{quote}
+ 137 80 78 71 13 10 26 10
+\end{quote}
+   
+This signature indicates that the remainder of the datastream contains a single PNG image, consisting of a series of chunks beginning with an \texttt{IHDR} chunk and ending with an \texttt{IEND} chunk. Every chunk is preceded by four bytes indicating its length.
+
+As we are interested in width and height we need to parse the \texttt{IHDR} chunk. It is the first chunk in PNG datastream and its type field contains the decimal values:
+
+\begin{quote}
+ 73 72 68 82
+\end{quote}
+
+The header also contains:\\
+
+\begin{tabular}{l l}
+  Width & 4 bytes\\
+  Height & 4 bytes\\
+  Bit depth & 1 bytes\\
+  Color type & 1 byte\\
+  Compression method & 1 byte\\
+  Filter method & 1 byte\\
+  Interlace method & 1 byte\\
+\end{tabular}
+\newline
+
+So for reading width and height we need first 24 bytes; the first eight contain the signature, then we have four bytes for length, four bytes for the type field and eight bytes for information we are interested in. This is the code:
+
+@D Get image data
+@{function getImageData(imageFile)
+  """
+  Get width and height from a png image
+  """
+
+  input = open(imageFile, "r")
+  data = readbytes(input, 24)
+  
+  if (convert(Array{Int},data[1:8]) != reshape([137 80 78 71 13 10 26 10],8))
+    error("This is not a valid png image")
+  end
+
+  w = data[17:20]
+  h = data[21:24]
+
+  width = reinterpret(Int32, reverse(w))[1]
+  height = reinterpret(Int32, reverse(h))[1]
+
+  close(input)
+
+  return width, height
+end
+@}
+
+\subsection{Centroids computation}\label{sec:centroids}
+
+As we have seen above, this package uses greyscale images for conversion into three-dimensional models and for next steps we need binary images so we can distinguish between the background and the model we want to represent. We can use clustering techniques for obtaining this result. First step is centroids calculation from a chosen image (this choice must be made from the user, because we cannot knowing in advance what is the best image for finding clusters).
+Moreover we compute these centroids only for an image and then reuse them when we want to cluster all other images, saving processing time.\\
+Actually we need only two centroids, because next steps should only recognize between background and foreground pixels.
+This is the code used for centroid computation:
+
+@D Centroid computation
+@{function calculateClusterCentroids(path, image, numberOfClusters = 2)
+  """
+  Loads an image and calculate cluster centroids for segmentation
+
+  path: Path of the image folder
+  image: name of the image
+  numberOfClusters: number of desidered clusters
+  """
+  imageFilename = string(path, image)
+
+  img = imread(imageFilename) # Open png image with Julia Package
+
+  imArray = raw(img)
+
+  imageWidth = size(imArray)[1]
+  imageHeight = size(imArray)[2]
+
+  # Getting pixel values and saving them with another shape
+  image3d = Array(Array{Uint8,2}, 0)
+
+  # Inserting page on another list and reshaping
+  push!(image3d, imArray)
+  pixel = reshape(image3d[1], (imageWidth * imageHeight), 1)
+
+  centroids,_ = cluster.kmeans(pixel, numberOfClusters)
+
+  return centroids
+
+end
+@}
+
+
+\subsection{Transform pixels to three-dimensional array}\label{sec:transformation}
+
 %===============================================================================
 \section{ImagesConvertion}\label{sec:ImagesConvertion}
 %===============================================================================
 
-%-------------------------------------------------------------------------------
-
-%-------------------------------------------------------------------------------
 %===============================================================================
 \section{GenerateBorderMatrix}\label{sec:GenerateBorderMatrix}
 %===============================================================================
 
-%-------------------------------------------------------------------------------
-
-%-------------------------------------------------------------------------------
 %===============================================================================
 \section{Lar2Julia}\label{sec:Lar2Julia}
 %===============================================================================
 
-%-------------------------------------------------------------------------------
-
-%-------------------------------------------------------------------------------
 %===============================================================================
 \section{LARUtils}\label{sec:LARUtils}
 %===============================================================================
 
-%-------------------------------------------------------------------------------
-
-%-------------------------------------------------------------------------------
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================
 
 %-------------------------------------------------------------------------------
 
-%-------------------------------------------------------------------------------
+%===============================================================================
 \section{Exporting the library}
-%-------------------------------------------------------------------------------
+%===============================================================================
 
 \paragraph{ImagesToLARModel}
 @O src/ImagesToLARModel.jl
@@ -1341,7 +1567,6 @@ function mergeObj(modelDirectory)
   for i in 1:length(vertices_files)
     vtx_file = vertices_files[i]
     f = open(string(modelDirectory, "/", vtx_file))
-    debug("Opening ", vtx_file)
 
     # Writing vertices on the obj file
     for ln in eachline(f)
@@ -1356,7 +1581,6 @@ function mergeObj(modelDirectory)
   for i in 1 : length(faces_files)
     faces_file = faces_files[i]
     f = open(string(modelDirectory, "/", faces_file))
-    debug("Opening ", faces_file)
     for ln in eachline(f)
       splitted = split(ln)
       write(obj_file, "f ")
@@ -1730,16 +1954,9 @@ end
 @O src/PngStack2Array3dJulia.jl
 @{module PngStack2Array3dJulia
 
-export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
+@< modules import PngStack2Array3dJulia @>
+@< Convert to png @>
 
-using Images # For loading png images
-using Colors # For grayscale images
-using PyCall # For including python clustering
-using Logging
-@@pyimport scipy.ndimage as ndimage
-@@pyimport scipy.cluster.vq as cluster
-
-NOISE_SHAPE_DETECT=10
 
 function getImageData(imageFile)
   """
@@ -1863,75 +2080,6 @@ function pngstack2array3d(path, minSlice, maxSlice, centroids)
 
   return image3d
 end
-
-function convertImages(inputPath, outputPath, bestImage)
-  """
-  Get all images contained in inputPath directory
-  saving them in outputPath directory in png format.
-  If images have one of two odd dimensions, they will be resized
-  and if folder contains an odd number of images another one will be
-  added
-
-  inputPath: Directory containing input images
-  outputPath: Temporary directory containing png images
-  bestImage: Image chosen for centroids computation
-
-  Returns the new name for the best image
-  """
-
-  imageFiles = readdir(inputPath)
-  numberOfImages = length(imageFiles)
-  outputPrefix = ""
-  for i in 1: length(string(numberOfImages)) - 1
-    outputPrefix = string(outputPrefix,"0")
-  end
-
-  newBestImage = ""
-  imageNumber = 0
-  for imageFile in imageFiles
-    img = imread(string(inputPath, imageFile))
-
-    # resizing images if they do not have even dimensions
-    dim = size(img)
-    if(dim[1] % 2 != 0)
-      debug("Image has odd x; resizing")
-      xrange = 1: dim[1] - 1
-    else
-      xrange = 1: dim[1]
-    end
-
-    if(dim[2] % 2 != 0)
-      debug("Image has odd y; resizing")
-      yrange = 1: dim[2] - 1
-    else
-      yrange = 1: dim[2]
-    end
-
-    img = subim(img, xrange, yrange)
-
-    outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
-    imwrite(img, outputFilename)
-
-    # Searching the best image
-    if(imageFile == bestImage)
-      newBestImage = string(outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
-    end
-
-    imageNumber += 1
-  end
-
-  # Adding another image if they are odd
-  if(numberOfImages % 2 != 0)
-    debug("Odd images, adding one")
-    bestImage = imread(string(outputPath, "/", newBestImage))
-    imArray = zeros(Uint8, size(bestImage))
-    img = grayim(imArray)
-    outputFilename = string(outputPath, "/", outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
-    imwrite(img, outputFilename)
-  end
-
-  return newBestImage
-end
 end
 @}
 
@@ -1961,7 +2109,9 @@ end
 
 %-------------------------------------------------------------------------------
 
+%===============================================================================
 \section{Tests}\label{sec:tests}
+%===============================================================================
 
 \paragraph{Generation of the border matrix}
 %-------------------------------------------------------------------------------

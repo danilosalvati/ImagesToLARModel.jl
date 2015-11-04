@@ -61,7 +61,6 @@ function mergeObj(modelDirectory)
   for i in 1:length(vertices_files)
     vtx_file = vertices_files[i]
     f = open(string(modelDirectory, "/", vtx_file))
-    debug("Opening ", vtx_file)
 
     # Writing vertices on the obj file
     for ln in eachline(f)
@@ -76,7 +75,6 @@ function mergeObj(modelDirectory)
   for i in 1 : length(faces_files)
     faces_file = faces_files[i]
     f = open(string(modelDirectory, "/", faces_file))
-    debug("Opening ", faces_file)
     for ln in eachline(f)
       splitted = split(ln)
       write(obj_file, "f ")
