@@ -369,9 +369,16 @@ end @}
     
 Next we need to open the single image doing the following operations:
 \begin{enumerate}
+ \item Open images using \texttt{Images} library (which relies on \texttt{ImageMagick}) and save them in greyscale png format 
  \item if one or both dimensions of the image are odd we need to remove one row (or column) of pixels to make it even. This will be more clear when we will introduce the grid for parallel computation (see section~\ref{sec:ImagesConvertion})
- \item after computing images boundaries, they can be opened using \texttt{Images} library (which relies on \texttt{ImageMagick}) and saved in greyscale png format 
 \end{enumerate}
+
+@D Greyscale conversion
+@{rgb_img = convert(Image{ColorTypes.RGB}, img)
+gray_img = convert(Image{ColorTypes.Gray}, rgb_img) @}
+    
+As we can see, we first need to convert image to RGB and then reconverting to greyscale. Without the RGB conversion these rows will return a stackoverflow error due to the presence of alpha channel
+
 
 @D Image resizing
 @{# resizing images if they do not have even dimensions
@@ -390,14 +397,8 @@ else
   yrange = 1: dim[2]
 end
 
-img = subim(img, xrange, yrange) @}
+img = subim(gray_img, xrange, yrange) @}
     
-
-@D Greyscale conversion
-@{rgb_img = convert(Image{ColorTypes.RGB}, img)
-gray_img = convert(Image{ColorTypes.Gray}, rgb_img) @}
-    
-As we can see, we first need to convert image to RGB and then reconverting to greyscale. Without the RGB conversion these rows will return a stackoverflow error due to the presence of alpha channel
 
 Next we just have to search for the best image and add one image if they are odd (for same reasons we need even image dimensions)
 
@@ -412,9 +413,18 @@ imageNumber += 1 @}
 @D Add one image
 @{# Adding another image if they are odd
 if(numberOfImages % 2 != 0)
-  debug("Odd images, adding one")
-  bestImage = imread(string(outputPath, "/", newBestImage))
-  imArray = zeros(Uint8, size(bestImage))
+  debug("Odd images, adding one")  
+  imageWidth, imageHeight = getImageData(string(outputPath, "/", newBestImage))
+  
+  if(imageWidth % 2 != 0)
+    imageWidth -= 1
+  end
+  
+  if(imageHeight % 2 != 0)
+    imageHeight -= 1
+  end  
+  
+  imArray = zeros(Uint8, (imageWidth, imageHeight))
   img = grayim(imArray)
   outputFilename = string(outputPath, "/", 
 		      outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
@@ -445,10 +455,10 @@ Finally this is the code for the entire function:
   imageNumber = 0
   for imageFile in imageFiles
     img = imread(string(inputPath, imageFile))
+    @< Greyscale conversion @>
     @< Image resizing @>
     outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end],
 			      imageNumber,".png")
-    @< Greyscale conversion @>
     imwrite(img, outputFilename)
 
     @< Search for best image @>
@@ -578,7 +588,7 @@ imArray = raw(img) # Putting pixel values into RAW 3d array @}
 
 The \texttt{Images.jl} \texttt{raw} function, get all pixel values saving them in an Array. In Figure~\ref{fig:rawImage} we can see how the array will be like for a sample greyscale image.
 
-\begin{figure}[htb] %  figure placement: here, top, bottom, or page
+\begin{figure}[htb] %  figure placement: here, top, bottom
    \centering
    \includegraphics[width=0.27\linewidth]{images/grayscalesample.png}
    \includegraphics[width=0.47\linewidth]{images/imArraypart.png} \\
@@ -591,20 +601,45 @@ The \texttt{Images.jl} \texttt{raw} function, get all pixel values saving them i
 Next we have to reduce noise on the image. The better choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
 
 @D Reduce noise
-@{image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT) @}
+@{# Denoising
+image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT) @}
 
 Where image3d is an array containing all raw data from images
 
+Finally we have to compute clusters (using \texttt{scipy}) obtaining images with only two values:
 
+@D Clustering images
+@{# Image Quantization
+debug("page = ", page)
+debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
+pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
+qnt,_ = cluster.vq(pixel,centroids)
 
+# Reshaping quantization result
+centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
+#centers_idx = reshape(qnt, size(image3d[page]))
 
+# Inserting quantized values into 3d image array
+tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
 
+for j in 1:size(image3d[1],2)
+  for i in 1:size(image3d[1],1)
+    tmp[i,j] = centroids[centers_idx[i,j] + 1]
+  end
+end
 
-C'E UN BUG QUANDO CREO L'IMMAGINE AGGIUNTIVA!!!!!!!!! (se la dimensioni non è pari la creo comunque in quel modo)
+image3d[page] = tmp @}
 
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.30\linewidth]{images/grayscalesample.png} \hfill
+   \includegraphics[width=0.30\linewidth]{images/denoised.png} \hfill
+   \includegraphics[width=0.30\linewidth]{images/quantized.png} \hfill
+   \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
+   \label{fig:rawImage}
+\end{figure}
 
-
-This is the entire code:
+This is the complete code:
 
 @D Pixel transformation
 @{function pngstack2array3d(path, minSlice, maxSlice, centroids)
@@ -626,9 +661,7 @@ This is the entire code:
     debug("slice = ", slice)
     imageFilename = string(path, files[slice + 1])
     debug("image name: ", imageFilename)
-    img = imread(imageFilename) # Open png image with Julia Package
-
-    imArray = raw(img) # Putting pixel values into RAW 3d array
+    @< Read raw data @>
     debug("imArray size: ", size(imArray))
 
     # Inserting page on another list and reshaping
@@ -639,29 +672,9 @@ This is the entire code:
   # Removing noise using a median filter and quantization
   for page in 1:length(image3d)
 
-    # Denoising
-    image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT)
+    @< Reduce noise @>
 
-    # Image Quantization
-    debug("page = ", page)
-    debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
-    pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-    qnt,_ = cluster.vq(pixel,centroids)
-
-    # Reshaping quantization result
-    centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
-    #centers_idx = reshape(qnt, size(image3d[page]))
-
-    # Inserting quantized values into 3d image array
-    tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
-
-    for j in 1:size(image3d[1],2)
-      for i in 1:size(image3d[1],1)
-        tmp[i,j] = centroids[centers_idx[i,j] + 1]
-      end
-    end
-
-    image3d[page] = tmp
+    @< Clustering images @>
 
   end
 
@@ -672,6 +685,46 @@ end
 %===============================================================================
 \section{ImagesConvertion}\label{sec:ImagesConvertion}
 %===============================================================================
+Now we will study the most important module for this package: \texttt{ImagesConvertion}. It has the responsibility of doing the entire conversion process delegating tasks to the other modules.
+
+\subsection{General algorithm}
+
+Now we will examine, in a general way, the algorithm used for convertion from a two-dimensional to a three-dimensional representation of our biomedical models.\\
+We have already seen in section~\ref{sec:PngStack2Array3dJulia} how to get information from a png image, obtaining arrays with only two values; one for the \textbf{background} color and one for \textbf{foreground} color. This is only the first step of the complete conversion process.\\
+
+Now we focus only on a single image of the stack. Our two-dimensional representation, consists of pixels of two different colors (where only the one associated with foreground is significant); so we can obtain a three-dimensional representation simply replacing every foreground pixel with a small cube. Focusing on the entire stack of images, the full three-dimensional representation can be obtained simply overlapping all the image representations\\
+
+This algorithm is very simple, however we does not considered problems concerning lack of memory. In fact, we could have images so big that we cannot build these models entirely in memory; moreover they would require a lot of CPU time for computation. A good solution to these problems consists in taking our representation based on images and divide according to a \textbf{grid}.\\
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.45\linewidth]{images/imageGrid.png} \hfill
+   \includegraphics[width=0.45\linewidth]{images/imageGrid.png}
+   \caption{The grid used for parallel computation (a) 2D grid on a single image (b) 3D grid for the stack of images}
+   \label{fig:rawImage}
+\end{figure}
+
+So, instead of converting the entire model with a unique process
+
+Quindi anziché eseguire la conversione dell'intero modello in un'unica soluzione, ogni singolo processo eseguirà la conversione di una serie di blocchi ricavati dalla griglia. So, according to this subdivision we can define the following terms: 
+
+\begin{itemize}
+ \item \textbf{Grid:} It is the subdivision of the entire stack of images, with sizes defined by the user. They should be powers of two (for increasing performance during border matrix computation which we will see in section~\ref{sec:GenerateBorderMatrix})
+ \item \textbf{Block:} It is a single cell of the grid
+ \item \textbf{xBlock:} It is the x-coordinate of a block
+ \item \textbf{yBlock:} It is the y-coordinate of a block
+ \item \textbf{zBlock:} It is the z-coordinate of a block
+\end{itemize}
+
+\textit{xBlock} and \textit{yBlock} are defined on a single image, while \textit{zBlock} is defined on different images; in the code it will often be replaced by terms \textbf{StartImage} and \textbf{EndImage}, which indicate the first image and the last image of that block respectively.
+
+\subsection{Module imports}\label{sec:ImagesConvertionImports}
+These are modules needed for this part of the package and the public functions exported
+
+@D modules import ImagesConvertion
+@{
+@}
+
 
 %===============================================================================
 \section{GenerateBorderMatrix}\label{sec:GenerateBorderMatrix}
@@ -2080,130 +2133,9 @@ end
 
 @< modules import PngStack2Array3dJulia @>
 @< Convert to png @>
-
-
-function getImageData(imageFile)
-  """
-  Get width and heigth from a png image
-  """
-
-  input = open(imageFile, "r")
-  data = readbytes(input, 24)
-
-  if (data[2:4] != [80, 78, 71] && data[13:16] != [73, 72, 68, 82])
-    error("This is not a png image")
-  end
-
-  w = data[17:20]
-  h = data[21:24]
-
-  width = reinterpret(Int32, reverse(w))[1]
-  height = reinterpret(Int32, reverse(h))[1]
-
-  close(input)
-
-  return width, height
-end
-
-function calculateClusterCentroids(path, image, numberOfClusters = 2)
-  """
-  Loads an image and calculate cluster centroids for segmentation
-
-  path: Path of the image folder
-  image: name of the image
-  numberOfClusters: number of desidered clusters
-  """
-  imageFilename = string(path, image)
-
-  img = imread(imageFilename) # Open png image with Julia Package
-
-  rgb_img = convert(Image{ColorTypes.RGB}, img)
-  gray_img = convert(Image{ColorTypes.Gray}, rgb_img)
-  imArray = raw(gray_img)
-
-  imageWidth = size(imArray)[1]
-  imageHeight = size(imArray)[2]
-
-  # Getting pixel values and saving them with another shape
-  image3d = Array(Array{Uint8,2}, 0)
-
-  # Inserting page on another list and reshaping
-  push!(image3d, imArray)
-  pixel = reshape(image3d[1], (imageWidth * imageHeight), 1)
-
-  # Segmenting image using kmeans
-  # https://en.wikipedia.org/wiki/Image_segmentation#Clustering_methods
-
-  centroids,_ = cluster.kmeans(pixel, numberOfClusters)
-
-  return centroids
-
-end
-
-
-function pngstack2array3d(path, minSlice, maxSlice, centroids)
-  """
-  Import a stack of PNG images into a 3d array
-
-  path: path of images directory
-  minSlice and maxSlice: number of first and last slice
-  centroids: centroids for image segmentation
-  """
-
-  # image3d contains all images values
-  image3d = Array(Array{Uint8,2}, 0)
-
-  debug("maxSlice = ", maxSlice, " minSlice = ", minSlice)
-  files = readdir(path)
-
-  for slice in minSlice : (maxSlice - 1)
-    debug("slice = ", slice)
-    imageFilename = string(path, files[slice + 1])
-    debug("image name: ", imageFilename)
-    img = imread(imageFilename) # Open png image with Julia Package
-
-    # Converting image in grayscale
-    rgb_img = convert(Image{ColorTypes.RGB}, img)
-    gray_img = convert(Image{ColorTypes.Gray}, rgb_img)
-    imArray = raw(gray_img) # Putting pixel values into RAW 3d array
-    debug("imArray size: ", size(imArray))
-
-    # Inserting page on another list and reshaping
-    push!(image3d, imArray)
-
-  end
-
-  # Removing noise using a median filter and quantization
-  for page in 1:length(image3d)
-
-    # Denoising
-    image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT)
-
-    # Image Quantization
-    debug("page = ", page)
-    debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
-    pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-    qnt,_ = cluster.vq(pixel,centroids)
-
-    # Reshaping quantization result
-    centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
-    #centers_idx = reshape(qnt, size(image3d[page]))
-
-    # Inserting quantized values into 3d image array
-    tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
-
-    for j in 1:size(image3d[1],2)
-      for i in 1:size(image3d[1],1)
-        tmp[i,j] = centroids[centers_idx[i,j] + 1]
-      end
-    end
-
-    image3d[page] = tmp
-
-  end
-
-  return image3d
-end
+@< Get image data @>
+@< Centroid computation @>
+@< Pixel transformation @>
 end
 @}
 

@@ -601,7 +601,8 @@ The \texttt{Images.jl} \texttt{raw} function, get all pixel values saving them i
 Next we have to reduce noise on the image. The better choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
 
 @D Reduce noise
-@{image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT) @}
+@{# Denoising
+image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT) @}
 
 Where image3d is an array containing all raw data from images
 
@@ -634,7 +635,7 @@ image3d[page] = tmp @}
    \includegraphics[width=0.30\linewidth]{images/grayscalesample.png} \hfill
    \includegraphics[width=0.30\linewidth]{images/denoised.png} \hfill
    \includegraphics[width=0.30\linewidth]{images/quantized.png} \hfill
-   \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Quantized image}
+   \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
    \label{fig:rawImage}
 \end{figure}
 
@@ -671,7 +672,6 @@ This is the complete code:
   # Removing noise using a median filter and quantization
   for page in 1:length(image3d)
 
-    # Denoising
     @< Reduce noise @>
 
     @< Clustering images @>
@@ -685,6 +685,48 @@ end
 %===============================================================================
 \section{ImagesConvertion}\label{sec:ImagesConvertion}
 %===============================================================================
+Now we will study the most important module for this package: \texttt{ImagesConvertion}. It has the responsibility of doing the entire conversion process delegating tasks to the other modules.
+
+\subsection{General algorithm}
+
+Now we will examine, in a general way, the algorithm used for convertion from a two-dimensional to a three-dimensional representation of our biomedical models.\\
+We have already seen in section~\ref{sec:PngStack2Array3dJulia} how to get information from a png image, obtaining arrays with only two values; one for the \textbf{background} color and one for \textbf{foreground} color. This is only the first step of the complete conversion process.\\
+
+Now we focus only on a single image of the stack. Our two-dimensional representation, consists of pixels of two different colors (where only the one associated with foreground is significant); so we can obtain a three-dimensional representation simply replacing every foreground pixel with a small cube. Focusing on the entire stack of images, the full three-dimensional representation can be obtained simply overlapping all the image representations\\
+
+This algorithm is very simple, however we does not considered problems concerning lack of memory. In fact, we could have images so big that we cannot build these models entirely in memory; moreover they would require a lot of CPU time for computation. A good solution to these problems consists in taking our representation based on images and divide according to a \textbf{grid}.\\
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.45\linewidth]{images/imageGrid.png} \hfill
+   \includegraphics[width=0.45\linewidth]{images/imageGrid3d.png}
+   \caption{The grid used for parallel computation (a) 2D grid on a single image (b) 3D grid for the stack of images}
+   \label{fig:rawImage}
+\end{figure}
+
+So, instead of converting the entire model with a unique process, we can subdivide the input among a lot of processes, where every process will execute the conversion process on a small number of \textbf{blocks} according to the grid subdivision.\\
+
+Summing up we can define the following terms, which will be used in next parts of this documentation:
+
+\begin{itemize}
+ \item \textbf{Grid:} It is the subdivision of the entire stack of images, with sizes defined by the user. They should be powers of two (for increasing performance during border matrix computation which we will see in section~\ref{sec:GenerateBorderMatrix})
+ \item \textbf{Block:} It is a single cell of the grid
+ \item \textbf{xBlock:} It is the x-coordinate of a block
+ \item \textbf{yBlock:} It is the y-coordinate of a block
+ \item \textbf{zBlock:} It is the z-coordinate of a block
+\end{itemize}
+
+\textit{xBlock} and \textit{yBlock} are defined on a single image, while \textit{zBlock} is defined on different images; in the code it will often be replaced by terms \textbf{StartImage} and \textbf{EndImage}, which indicate the first image and the last image of that block respectively.\\
+
+In next subsections we will examine the conversion algorithm in detail, showing what happens for every block of the grid.
+
+\subsection{Module imports}\label{sec:ImagesConvertionImports}
+These are modules needed for this part of the package and the public functions exported
+
+@D modules import ImagesConvertion
+@{
+@}
+
 
 %===============================================================================
 \section{GenerateBorderMatrix}\label{sec:GenerateBorderMatrix}
