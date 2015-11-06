@@ -1,4 +1,4 @@
-module ImagesConvertion
+module ImagesConversion
 
 import GenerateBorderMatrix
 import PngStack2Array3dJulia
@@ -8,19 +8,13 @@ import LARUtils
 
 import JSON
 
-using PyCall
-@pyimport scipy.sparse as Pysparse
-
 using Logging
 
 export images2LARModel
 
-"""
-This is main module for converting a stack
-of images into a 3d model
-"""
 
-function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory, parallelMerge)
+function images2LARModel(nx, ny, nz, bestImage,
+                        inputDirectory, outputDirectory, parallelMerge)
   """
   Convert a stack of images into a 3d model
   """
@@ -38,9 +32,11 @@ function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory,
 
   tempDirectory = string(outputDirectory,"TEMP/")
 
-  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory, bestImage)
+  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory,
+                                                        bestImage)
 
-  imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(string(tempDirectory,newBestImage))
+  imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
+                                      string(tempDirectory,newBestImage))
   imageDepth = length(readdir(tempDirectory))
 
   # Computing border matrix
@@ -49,18 +45,20 @@ function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory,
     mkdir(string(outputDirectory, "BORDERS"))
   catch
   end
-  borderFilename = GenerateBorderMatrix.getOriented3BorderPath(string(outputDirectory, "BORDERS"), nx, ny, nz)
+  borderFilename = GenerateBorderMatrix.getOriented3BorderPath(
+                                        string(outputDirectory, "BORDERS"), nx, ny, nz)
 
-  # Starting images convertion and border computation
-  info("Starting images convertion")
-  startImageConvertion(tempDirectory, newBestImage, outputDirectory, borderFilename,
+  # Starting images conversion and border computation
+  info("Starting images conversion")
+  startImageConversion(tempDirectory, newBestImage, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
                        numberOfClusters, parallelMerge)
 
 end
 
-function startImageConvertion(sliceDirectory, bestImage, outputDirectory, borderFilename,
+
+function startImageConversion(sliceDirectory, bestImage, outputDirectory, borderFilename,
                               imageHeight, imageWidth, imageDepth,
                               imageDx, imageDy, imageDz,
                               numberOfClusters, parallelMerge)
@@ -74,16 +72,19 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
   # Create clusters for image segmentation
   info("Computing image centroids")
   debug("Best image = ", bestImage)
-  centroidsCalc = PngStack2Array3dJulia.calculateClusterCentroids(sliceDirectory, bestImage, numberOfClusters)
+  centroidsCalc = PngStack2Array3dJulia.calculateClusterCentroids(sliceDirectory,
+                                          bestImage, numberOfClusters)
   debug(string("centroids = ", centroidsCalc))
 
   try
     mkdir(string(outputDirectory, "BORDERS"))
   catch
   end
-  debug(string("Opening border file: ", "border_", imageDx, "-", imageDy, "-", imageDz, ".json"))
-  boundaryMat = getBorderMatrix(string(outputDirectory,"BORDERS/","border_", imageDx, "-",
-                                       imageDy, "-", imageDz, ".json"))
+  debug("Opening border file: border_", imageDx, "-", imageDy, "-", imageDz, ".json")
+  boundaryMat = GenerateBorderMatrix.getBorderMatrix(
+                                          string(outputDirectory,"BORDERS/","border_",
+                                          imageDx, "-", imageDy, "-", imageDz, ".json"))
+  
   beginImageStack = 0
   endImage = beginImageStack
 
@@ -95,20 +96,19 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
     info("StartImage = ", startImage)
     info("endImage = ", endImage)
 
-    task = @spawn imageConvertionProcess(sliceDirectory, outputDirectory,
-                           beginImageStack, startImage, endImage,
-                           imageDx, imageDy, imageDz,
-                           imageHeight, imageWidth,
-                           centroidsCalc, boundaryMat)
+    task = @spawn imageConversionProcess(sliceDirectory, outputDirectory,
+                            beginImageStack, startImage, endImage,
+                            imageDx, imageDy, imageDz,
+                            imageHeight, imageWidth,
+                            centroidsCalc, boundaryMat)
 
     push!(tasks, task)
   end
-
+  
   # Waiting for tasks completion
   for task in tasks
     wait(task)
   end
-
   info("Merging boundaries")
   # Merge Boundaries files
   Model2Obj.mergeBoundaries(string(outputDirectory, "MODELS"),
@@ -121,10 +121,11 @@ function startImageConvertion(sliceDirectory, bestImage, outputDirectory, border
   else
     Model2Obj.mergeObj(string(outputDirectory, "MODELS"))
   end
+  
+  end
 
-end
 
-function imageConvertionProcess(sliceDirectory, outputDirectory,
+function imageConversionProcess(sliceDirectory, outputDirectory,
                                 beginImageStack, startImage, endImage,
                                 imageDx, imageDy, imageDz,
                                 imageHeight, imageWidth,
@@ -135,12 +136,14 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
   """
 
   info("Transforming png data into 3d array")
-  theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory, startImage, endImage, centroids)
+  theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
+                                                  startImage, endImage, centroids)
 
   centroidsSorted = sort(vec(reshape(centroids, 1, 2)))
-  foreground = centroidsSorted[2]
   background = centroidsSorted[1]
+  foreground = centroidsSorted[2]
   debug(string("background = ", background, " foreground = ", foreground))
+  
 
   for xBlock in 0:(imageHeight / imageDx - 1)
     for yBlock in 0:(imageWidth / imageDy - 1)
@@ -153,11 +156,13 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
       debug("***********")
       debug(string("xStart = ", xStart, " xEnd = ", xEnd))
       debug(string("yStart = ", yStart, " yEnd = ", yEnd))
-      debug("theImage dimensions: ", size(theImage)[1], " ", size(theImage[1])[1], " ", size(theImage[1])[2])
+      debug("theImage dimensions: ", size(theImage)[1], " ",
+                      size(theImage[1])[1], " ", size(theImage[1])[2])
 
       # Getting a slice of theImage array
 
-      image = Array(Uint8, (convert(Int, length(theImage)), convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
+      image = Array(Uint8, (convert(Int, length(theImage)), 
+                            convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
       debug("image size: ", size(image))
       for z in 1:length(theImage)
         for x in 1 : (xEnd - xStart)
@@ -166,7 +171,8 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
           end
         end
       end
-
+      
+      
       nz, nx, ny = size(image)
       chains3D = Array(Uint8, 0)
       zStart = startImage - beginImageStack
@@ -179,6 +185,7 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
           end
         end
       end
+      
 
       if(length(chains3D) != 0)
         # Computing boundary chain
@@ -191,7 +198,8 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         catch
         end
         # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-        models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
+        models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz,
+                                                    yStart, xStart, zStart, objectBoundaryChain)
 
         V, FV = models[1][1] # inside model
         V_left, FV_left = models[2][1]
@@ -200,67 +208,42 @@ function imageConvertionProcess(sliceDirectory, outputDirectory,
         V_bottom, FV_bottom = models[5][1] # bottom boundary
         V_front, FV_front = models[6][1] # front boundary
         V_back, FV_back = models[7][1] # back boundary
-
+        
+        
         # Writing all models on disk
-        model_outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        model_outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock,
+                                        "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V, FV, model_outputFilename)
 
-        left_outputFilename = string(outputDirectory, "MODELS/left_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        left_outputFilename = string(outputDirectory, "MODELS/left_output_", xBlock,
+                                        "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V_left, FV_left, left_outputFilename)
 
-        right_outputFilename = string(outputDirectory, "MODELS/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        right_outputFilename = string(outputDirectory, "MODELS/right_output_", xBlock,
+                                        "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V_right, FV_right, right_outputFilename)
 
-        top_outputFilename = string(outputDirectory, "MODELS/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        top_outputFilename = string(outputDirectory, "MODELS/top_output_", xBlock,
+                                        "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V_top, FV_top, top_outputFilename)
 
-        bottom_outputFilename = string(outputDirectory, "MODELS/bottom_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        bottom_outputFilename = string(outputDirectory, "MODELS/bottom_output_", xBlock,
+                                        "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V_bottom, FV_bottom, bottom_outputFilename)
 
-        front_outputFilename = string(outputDirectory, "MODELS/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        front_outputFilename = string(outputDirectory, "MODELS/front_output_", xBlock,
+                                        "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
 
-        back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
+        back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock,
+                                        "-", yBlock, "_", startImage, "_", endImage)
         Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
+
+        
       else
         debug("Model is empty")
       end
     end
   end
-end
-
-function getBorderMatrix(borderFilename)
-  """
-  TO REMOVE WHEN PORTING OF LARCC IN JULIA IS COMPLETED
-
-  Get the border matrix from json file and convert it in
-  CSC format
-  """
-  # Loading borderMatrix from json file
-  borderData = JSON.parsefile(borderFilename)
-  row = Array(Int64, length(borderData["ROW"]))
-  col = Array(Int64, length(borderData["COL"]))
-  data = Array(Int64, length(borderData["DATA"]))
-
-  for i in 1: length(borderData["ROW"])
-    row[i] = borderData["ROW"][i]
-  end
-
-  for i in 1: length(borderData["COL"])
-    col[i] = borderData["COL"][i]
-  end
-
-  for i in 1: length(borderData["DATA"])
-    data[i] = borderData["DATA"][i]
-  end
-
-  # Converting csr matrix to csc
-  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
-  denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
-
-  cscBoundaryMat = sparse(denseMatrix)
-
-  return cscBoundaryMat
-
-end
+end 
 end

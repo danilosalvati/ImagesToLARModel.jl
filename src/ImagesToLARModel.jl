@@ -4,7 +4,7 @@ push!(LOAD_PATH, Pkg.dir("ImagesToLARModel/src"))
 
 
 import JSON
-import ImagesConvertion
+import ImagesConversion
 
 using Logging
 
@@ -42,7 +42,7 @@ end
 
 function convertImagesToLARModel(configurationFile)
   """
-  Start convertion of a stack of images into a 3D model
+  Start conversion of a stack of images into a 3D model
   loading parameters from a JSON configuration file
 
   configurationFile: Path of the configuration file
@@ -56,7 +56,7 @@ end
 function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
                                  nx, ny, nz, DEBUG_LEVEL = INFO, parallelMerge = false)
   """
-  Start convertion of a stack of images into a 3D model
+  Start conversion of a stack of images into a 3D model
 
   inputDirectory: Directory containing the stack of images
   outputDirectory: Directory containing the output
@@ -76,7 +76,7 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
   end
 
   Logging.configure(level=DEBUG_LEVEL)
-  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage,
+  ImagesConversion.images2LARModel(nx, ny, nz, bestImage,
           inputDirectory, outputDirectory, parallelMerge)
 end
 

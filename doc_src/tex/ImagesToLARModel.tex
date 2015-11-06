@@ -14,6 +14,7 @@
 %----macros begin---------------------------------------------------------------
 \usepackage{color}
 \usepackage{amsthm}
+\usepackage{mathtools}
 
 \def\conv{\mbox{\textrm{conv}\,}}
 \def\aff{\mbox{\textrm{aff}\,}}
@@ -65,7 +66,7 @@ This work will use the LAR representation (\cite{cclar-proj:2013:00}) with the J
 
 This work has the aim to transform a two-dimensional representation of a model (based on a stack of images) into a three-dimensional representation based on the LAR schema. In particular, it will produce a single obj model which can be viewed with standard graphics softwares.\\
 
-In the past were developed other softwares using same principles (see~\cite{paodcvjcadanda2015}). However, they were optimized for speed and cannot be able to accept huge amounts of data. With the rise of the big data era, we now have more and more data available for research purposes, so softwares must be able to deal with them. A typical hardware environment is based on a cluster of computers where computation can be distributed among a lot of different processes. However, as stated by \textit{Amdahl's law}, the speedup of a program using multiple processors is limited by the time needed for the sequential fraction of the program. So use of parallel techniques for dealing with big data is not important for time performance gain but for memory space gain. In fact, our biggest problem is lack of memory, due to model sizes. As a consequence, every parts of this software is written with the clear objective of minimizing memory usage at the cost of losing something in terms of time performance. So, for example, images will be converted in blocks determined by a grid size (see section~\ref{sec:ImagesConvertion}) among different processes and different machines of the cluster
+In the past were developed other softwares using same principles (see~\cite{paodcvjcadanda2015}). However, they were optimized for speed and cannot be able to accept huge amounts of data. With the rise of the big data era, we now have more and more data available for research purposes, so softwares must be able to deal with them. A typical hardware environment is based on a cluster of computers where computation can be distributed among a lot of different processes. However, as stated by \textit{Amdahl's law}, the speedup of a program using multiple processors is limited by the time needed for the sequential fraction of the program. So use of parallel techniques for dealing with big data is not important for time performance gain but for memory space gain. In fact, our biggest problem is lack of memory, due to model sizes. As a consequence, every parts of this software is written with the clear objective of minimizing memory usage at the cost of losing something in terms of time performance. So, for example, images will be converted in blocks determined by a grid size (see section~\ref{sec:ImagesConversion}) among different processes and different machines of the cluster
 
 \begin{figure}[htb]
   \begin{center}
@@ -133,7 +134,7 @@ In previous section we have seen how to create a Julia package for distribute ou
 
 \begin{description}
  \item \textbf{ImagesToLARModel.jl}: main module for the software, it takes input parameters and start images conversion
- \item \textbf{ImagesConvertion.jl}: it is called by \texttt{ImagesToLARModel.jl} module and controls the entire conversion process calling all other modules
+ \item \textbf{ImagesConversion.jl}: it is called by \texttt{ImagesToLARModel.jl} module and controls the entire conversion process calling all other modules
  \item \textbf{GenerateBorderMatrix.jl}: it generates the boundary operator for grid specified in input, saving it in a JSON file
  \item \textbf{PngStack2Array3dJulia.jl}: it is responsible of images loading and conversion into computable data
  \item \textbf{Lar2Julia.jl}: it contains a small subset of LAR functions written in Julia language
@@ -161,7 +162,7 @@ Next sections of this document will explain in details all these modules showing
 \section{ImagesToLARModel}\label{sec:ImagesToLARModel}
 %===============================================================================
 
-This is the main module for the application; it takes the input data and start conversion calling \texttt{ImagesConvertion.jl}.
+This is the main module for the application; it takes the input data and start conversion calling \texttt{ImagesConversion.jl}.
 
 \subsection{Calling modules}\label{sec:modules}
 
@@ -178,7 +179,7 @@ After this line we can now import all modules defined here and export public fun
 
 @D modules import ImagesToLARModel
 @{import JSON
-import ImagesConvertion
+import ImagesConversion
 
 using Logging
 
@@ -277,7 +278,7 @@ As we have already said, this module has the only responsibility to collect data
 @D Start conversion from JSON file
 @{function convertImagesToLARModel(configurationFile)
   """
-  Start convertion of a stack of images into a 3D model
+  Start conversion of a stack of images into a 3D model
   loading parameters from a JSON configuration file
 
   configurationFile: Path of the configuration file
@@ -293,7 +294,7 @@ end
 @{function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
                                  nx, ny, nz, DEBUG_LEVEL = INFO, parallelMerge = false)
   """
-  Start convertion of a stack of images into a 3D model
+  Start conversion of a stack of images into a 3D model
 
   inputDirectory: Directory containing the stack of images
   outputDirectory: Directory containing the output
@@ -313,7 +314,7 @@ end
   end
 
   Logging.configure(level=DEBUG_LEVEL)
-  ImagesConvertion.images2LARModel(nx, ny, nz, bestImage,
+  ImagesConversion.images2LARModel(nx, ny, nz, bestImage,
 	  inputDirectory, outputDirectory, parallelMerge)
 end
 @}
@@ -348,7 +349,7 @@ As a consequence, we need a python environment with \texttt{scipy} to be able to
 
 First thing to do in our program is getting our input folder and convert the stack of images into png format. This process lets us to avoid managing an enormous variety of formats during computation, simplifying code used for transformation.\\
 
-Convertion needs the following parameters:
+Conversion needs the following parameters:
 \begin{itemize}
  \item inputPath: path of the folder containing the original images
  \item outputPath: path where we will save png images
@@ -370,7 +371,7 @@ end @}
 Next we need to open the single image doing the following operations:
 \begin{enumerate}
  \item Open images using \texttt{Images} library (which relies on \texttt{ImageMagick}) and save them in greyscale png format 
- \item if one or both dimensions of the image are odd we need to remove one row (or column) of pixels to make it even. This will be more clear when we will introduce the grid for parallel computation (see section~\ref{sec:ImagesConvertion})
+ \item if one or both dimensions of the image are odd we need to remove one row (or column) of pixels to make it even. This will be more clear when we will introduce the grid for parallel computation (see section~\ref{sec:ImagesConversion})
 \end{enumerate}
 
 @D Greyscale conversion
@@ -683,13 +684,13 @@ end
 @}
 
 %===============================================================================
-\section{ImagesConvertion}\label{sec:ImagesConvertion}
+\section{ImagesConversion}\label{sec:ImagesConversion}
 %===============================================================================
-Now we will study the most important module for this package: \texttt{ImagesConvertion}. It has the responsibility of doing the entire conversion process delegating tasks to the other modules.
+Now we will study the most important module for this package: \texttt{ImagesConversion}. It has the responsibility of doing the entire conversion process delegating tasks to the other modules.
 
 \subsection{General algorithm}
 
-Now we will examine, in a general way, the algorithm used for convertion from a two-dimensional to a three-dimensional representation of our biomedical models.\\
+Now we will examine, in a general way, the algorithm used for conversion from a two-dimensional to a three-dimensional representation of our biomedical models.\\
 We have already seen in section~\ref{sec:PngStack2Array3dJulia} how to get information from a png image, obtaining arrays with only two values; one for the \textbf{background} color and one for \textbf{foreground} color. This is only the first step of the complete conversion process.\\
 
 Now we focus only on a single image of the stack. Our two-dimensional representation, consists of pixels of two different colors (where only the one associated with foreground is significant); so we can obtain a three-dimensional representation simply replacing every foreground pixel with a small cube. Focusing on the entire stack of images, the full three-dimensional representation can be obtained simply overlapping all the image representations\\
@@ -720,14 +721,369 @@ Summing up we can define the following terms, which will be used in next parts o
 
 In next subsections we will examine the conversion algorithm in detail, showing what happens for every block of the grid.
 
-\subsection{Module imports}\label{sec:ImagesConvertionImports}
-These are modules needed for this part of the package and the public functions exported
+\subsection{Module imports}\label{sec:ImagesConversionImports}
+These are modules needed for this part of the package and the public functions exported.
 
-@D modules import ImagesConvertion
-@{
+@D modules import ImagesConversion
+@{import GenerateBorderMatrix
+import PngStack2Array3dJulia
+import Lar2Julia
+import Model2Obj
+import LARUtils
+
+import JSON
+
+using Logging
+
+export images2LARModel
+@}
+
+\subsection{Data preparation}\label{sec:ImagesConversionDataPreparation}
+As a first thing, we will see how to prepare our data for conversion process. Firstly we need to convert input images to greyscale png; so we need to create a temporary directory for saving them.\\
+Later, we need to compute the LAR boundary operator for finding boundaries of our cells (for the generation see section~\ref{sec:GenerateBorderMatrix}) getting width and height from our images.\\
+Finally we can start conversion with all these parameters calling \texttt{startImageConversion} function, which will be explained in next subsection.
+
+@D main function for ImagesConversion
+@{function images2LARModel(nx, ny, nz, bestImage,
+			inputDirectory, outputDirectory, parallelMerge)
+  """
+  Convert a stack of images into a 3d model
+  """
+
+  info("Starting model creation")
+
+  numberOfClusters = 2 # Number of clusters for
+                       # images segmentation
+
+  info("Moving images into temp directory")
+  try
+    mkdir(string(outputDirectory, "TEMP"))
+  catch
+  end
+
+  tempDirectory = string(outputDirectory,"TEMP/")
+
+  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory,
+							bestImage)
+
+  imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
+				      string(tempDirectory,newBestImage))
+  imageDepth = length(readdir(tempDirectory))
+
+  # Computing border matrix
+  info("Computing border matrix")
+  try
+    mkdir(string(outputDirectory, "BORDERS"))
+  catch
+  end
+  borderFilename = GenerateBorderMatrix.getOriented3BorderPath(
+					string(outputDirectory, "BORDERS"), nx, ny, nz)
+
+  # Starting images conversion and border computation
+  info("Starting images conversion")
+  startImageConversion(tempDirectory, newBestImage, outputDirectory, borderFilename,
+                       imageHeight, imageWidth, imageDepth,
+                       nx, ny, nz,
+                       numberOfClusters, parallelMerge)
+
+end
+@}
+
+\subsection{Images conversion}\label{sec:imagesconversion}
+
+Now we can see how conversion of images works. First of all we compute the centroids from the best image using module \texttt{PngStack2Array3dJulia} and then get the previously computed border matrix in csc sparse array format
+
+@D compute centroids and get border matrix
+@{# Create clusters for image segmentation
+info("Computing image centroids")
+debug("Best image = ", bestImage)
+centroidsCalc = PngStack2Array3dJulia.calculateClusterCentroids(sliceDirectory,
+					bestImage, numberOfClusters)
+debug(string("centroids = ", centroidsCalc))
+
+try
+  mkdir(string(outputDirectory, "BORDERS"))
+catch
+end
+debug("Opening border file: border_", imageDx, "-", imageDy, "-", imageDz, ".json")
+boundaryMat = GenerateBorderMatrix.getBorderMatrix(
+					string(outputDirectory,"BORDERS/","border_",
+					imageDx, "-", imageDy, "-", imageDz, ".json"))
+@}
+
+Now we can start the conversion process.\\
+First of all we need to iterate on the grid finding the zBlock coordinate; we saw earlier that the \textit{imageDz} parameter must be a divisor of the image depth, so we will have exactly \textit{imageDepth/imageDz} blocks on the z coordinate. Moreovew, at every zBlock correspond a startImage and an endImage where $endImage - startImage = imageDz$.\\
+Now we can simply parallelize the conversion process spawning a new process for every zBlock, so we open at most \textit{imageDz} images for process.\\
+This is the code for the first part of conversion.
+
+@D conversion parallelization
+@{beginImageStack = 0
+endImage = beginImageStack
+
+info("Converting images into a 3d model")
+tasks = Array(RemoteRef, 0)
+for zBlock in 0:(imageDepth / imageDz - 1)
+  startImage = endImage
+  endImage = startImage + imageDz
+  info("StartImage = ", startImage)
+  info("endImage = ", endImage)
+
+  task = @@spawn imageConversionProcess(sliceDirectory, outputDirectory,
+			  beginImageStack, startImage, endImage,
+			  imageDx, imageDy, imageDz,
+			  imageHeight, imageWidth,
+			  centroidsCalc, boundaryMat)
+
+  push!(tasks, task)
+end
+@}
+
+All processes produce a lot of files containing three-dimensional models of a block, so after their termination, we should merge the boundaries between blocks (see later for a better explanation) and merge all model files as we can see in this piece of code:
+
+@D final file merge
+@{info("Merging boundaries")
+# Merge Boundaries files
+Model2Obj.mergeBoundaries(string(outputDirectory, "MODELS"),
+			  imageHeight, imageWidth, imageDepth,
+			  imageDx, imageDy, imageDz)
+
+info("Merging obj models")
+if parallelMerge
+  Model2Obj.mergeObjParallel(string(outputDirectory, "MODELS"))
+else
+  Model2Obj.mergeObj(string(outputDirectory, "MODELS"))
+end
+@}
+
+This is the final code for this function: 
+
+@D start conversion of images
+@{function startImageConversion(sliceDirectory, bestImage, outputDirectory, borderFilename,
+                              imageHeight, imageWidth, imageDepth,
+                              imageDx, imageDy, imageDz,
+                              numberOfClusters, parallelMerge)
+  """
+  Support function for converting a stack of images into a model
+
+  sliceDirectory: directory containing the image stack
+  imageForCentroids: image chosen for centroid computation
+  """
+
+  @< compute centroids and get border matrix @>
+  @< conversion parallelization @>
+  # Waiting for tasks completion
+  for task in tasks
+    wait(task)
+  end
+  @< final file merge @>
+  end
+@}
+
+\subsubsection{Images conversion (for single process)}\label{sec:conversionProcess}
+
+After we have sketchily studied images conversion, now we will see in details what happens for every process. First thing to do is read an image calling the \texttt{PngStack2Array3dJulia}, after that is necessary to sort the centroid array for choosing correct background and foreground pixels.
+
+@D image read and centroids sort
+@{info("Transforming png data into 3d array")
+theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
+						startImage, endImage, centroids)
+
+centroidsSorted = sort(vec(reshape(centroids, 1, 2)))
+background = centroidsSorted[1]
+foreground = centroidsSorted[2]
+debug(string("background = ", background, " foreground = ", foreground))
+@}
+
+Now we can start iterating on other blocks of the grid getting the corresponding slice of the image:
+
+@D get image slice
+@{# Getting a slice of theImage array
+
+image = Array(Uint8, (convert(Int, length(theImage)), 
+		      convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
+debug("image size: ", size(image))
+for z in 1:length(theImage)
+  for x in 1 : (xEnd - xStart)
+    for y in 1 : (yEnd - yStart)
+      image[z, x, y] = theImage[z][x + xStart, y + yStart]
+    end
+  end
+end
+@}
+
+Here \textit{xStart} and \textit{yStart} are the absolute coordinates of the model and are calculated from the block coordinates. At the end of this process, we have an array called \texttt{image} with size $(imageDz, imageDx, imageDy)$.
+
+Now we can get the value of the single pixel into this array and, if it represents a foreground point, put it into an array called \texttt{chain3D}. This structure contains indexes of the linearized array created from the matrix. In Figure~\ref{fig:linearizedMatrix} there is a sample conversion from the matrix to the array
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+    $
+    \begin{pmatrix}
+    0^{0} & 0^{2}\\
+    0^{1} & 0^{3}
+    \end{pmatrix}
+    $
+    $
+    \begin{pmatrix}
+    46^{4} & 0^{6}\\
+    46^{5} & 46^{7}
+    \end{pmatrix}
+    \xrightarrow{}
+    \begin{array}{c c c c c c c c}
+      0^{0} & 0^{1} & 0^{2} & 0^{3} & 46^{4}  & 46^{5} & 0^{6} & 46^{7} \\
+    \end{array}
+    $
+    
+    $
+    \begin{pmatrix}
+    0^{0} & 0^{2}\\
+    0^{1} & 0^{3}
+    \end{pmatrix}
+    $
+    $
+   \begin{pmatrix}
+    0^{4} & 46^{6}\\
+    46^{5} & 46^{7}
+    \end{pmatrix}
+    \xrightarrow{}
+    \begin{array}{c c c c c c c c}
+      0^{0} & 0^{1} & 0^{2} & 0^{3} & 0^{4}  & 46^{5} & 46^{6} & 46^{7} \\
+    \end{array}
+    $
+   \hfill
+   \caption{Transformation of a matrix resulting from a 2x2x2 grid into a linearized array (with cells indexes) (a) First example (b) Second example}
+   \label{fig:linearizedMatrix}
+\end{figure}
+
+As we can see from that figure, from a 2x2x2 grid we can obtain eight values for the single block (or \textbf{cell}), where the indexes for the foreground pixels represent indexes of non-empty cells in a 2x2x2 cuboidal geometry
+
+This is the code for getting foreground pixels:
+
+@D get foreground pixels
+@{nz, nx, ny = size(image)
+chains3D = Array(Uint8, 0)
+zStart = startImage - beginImageStack
+for y in 0:(nx - 1)
+  for x in 0:(ny - 1)
+    for z in 0:(nz - 1)
+      if(image[z + 1, x + 1, y + 1] == foreground)
+	push!(chains3D, y + ny * (x + nx * z))
+      end
+    end
+  end
+end
+@}
+
+Now we have full cells for the geometry, we can convert it into a full \textit{LAR model}. In particular, we are interested in cell boundaries for every block (as we want to obtain only the boundaries for the final model) so we can call function \texttt{larBoundaryChain} from \texttt{Lar2Julia} module (which will be explained in section~\ref{sec:Lar2Julia}). In Figure~\ref{img:sampleBlocks} there are some examples of models extracted from a single 2x2x2 block.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.45\linewidth]{images/sampleBlock1.png} \hfill
+   \includegraphics[width=0.45\linewidth]{images/sampleBlock2.png}
+   \caption{Sample models of 2x2x2 blocks}
+   \label{img:sampleBlocks}
+\end{figure}
+
+After model computation, next step is getting vertices and faces from model cells writing results to file. However, as we have already said, we are only interested in boundaries of the final model while now we have only boundaries of a single block. Consequently, we have to separate boundaries from the inner faces of the block on different files (boundaries separation will be explained in section~\ref{sec:LARUtils}). As we can see later, we will merge boundaries together deleting common faces on both block borders, obtaining a model without internal faces. These are pieces of code for getting the inner block model and the boundaries and for file writing:
+
+@D get inner model and boundaries
+@{# IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
+models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz,
+					    yStart, xStart, zStart, objectBoundaryChain)
+
+V, FV = models[1][1] # inside model
+V_left, FV_left = models[2][1]
+V_right, FV_right = models[3][1] # right boundary
+V_top, FV_top = models[4][1] # top boundary
+V_bottom, FV_bottom = models[5][1] # bottom boundary
+V_front, FV_front = models[6][1] # front boundary
+V_back, FV_back = models[7][1] # back boundary
+@}
+
+@D write block models to file
+@{# Writing all models on disk
+model_outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V, FV, model_outputFilename)
+
+left_outputFilename = string(outputDirectory, "MODELS/left_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_left, FV_left, left_outputFilename)
+
+right_outputFilename = string(outputDirectory, "MODELS/right_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_right, FV_right, right_outputFilename)
+
+top_outputFilename = string(outputDirectory, "MODELS/top_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_top, FV_top, top_outputFilename)
+
+bottom_outputFilename = string(outputDirectory, "MODELS/bottom_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_bottom, FV_bottom, bottom_outputFilename)
+
+front_outputFilename = string(outputDirectory, "MODELS/front_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
+
+back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
+
 @}
 
 
+
+@D image conversion process
+@{function imageConversionProcess(sliceDirectory, outputDirectory,
+                                beginImageStack, startImage, endImage,
+                                imageDx, imageDy, imageDz,
+                                imageHeight, imageWidth,
+                                centroids, boundaryMat)
+  """
+  Support function for converting a stack of image on a single
+  independent process
+  """
+
+  @< image read and centroids sort @>
+
+  for xBlock in 0:(imageHeight / imageDx - 1)
+    for yBlock in 0:(imageWidth / imageDy - 1)
+      yStart = xBlock * imageDx
+      xStart = yBlock * imageDy
+      #xEnd = xStart + imageDx
+      #yEnd = yStart + imageDy
+      xEnd = xStart + imageDy
+      yEnd = yStart + imageDx
+      debug("***********")
+      debug(string("xStart = ", xStart, " xEnd = ", xEnd))
+      debug(string("yStart = ", yStart, " yEnd = ", yEnd))
+      debug("theImage dimensions: ", size(theImage)[1], " ",
+		      size(theImage[1])[1], " ", size(theImage[1])[2])
+
+      @< get image slice @>
+      
+      @< get foreground pixels @>
+
+      if(length(chains3D) != 0)
+        # Computing boundary chain
+        debug("chains3d = ", chains3D)
+        debug("Computing boundary chain")
+        objectBoundaryChain = Lar2Julia.larBoundaryChain(boundaryMat, chains3D)
+        debug("Converting models into obj")
+        try
+          mkdir(string(outputDirectory, "MODELS"))
+        catch
+        end
+        @< get inner model and boundaries @>
+        
+        @< write block models to file @>
+      else
+        debug("Model is empty")
+      end
+    end
+  end
+end @}
 %===============================================================================
 \section{GenerateBorderMatrix}\label{sec:GenerateBorderMatrix}
 %===============================================================================
@@ -763,273 +1119,17 @@ These are modules needed for this part of the package and the public functions e
 end
 @}
 
-\paragraph{ImagesConvertion}
-@O src/ImagesConvertion.jl
-@{module ImagesConvertion
+\paragraph{ImagesConversion}
+@O src/ImagesConversion.jl
+@{module ImagesConversion
 
-import GenerateBorderMatrix
-import PngStack2Array3dJulia
-import Lar2Julia
-import Model2Obj
-import LARUtils
+@< modules import ImagesConversion @>
 
-import JSON
+@< main function for ImagesConversion @>
 
-using PyCall
-@@pyimport scipy.sparse as Pysparse
+@< start conversion of images @>
 
-using Logging
-
-export images2LARModel
-
-"""
-This is main module for converting a stack
-of images into a 3d model
-"""
-
-function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory, parallelMerge)
-  """
-  Convert a stack of images into a 3d model
-  """
-
-  info("Starting model creation")
-
-  numberOfClusters = 2 # Number of clusters for
-                       # images segmentation
-
-  info("Moving images into temp directory")
-  try
-    mkdir(string(outputDirectory, "TEMP"))
-  catch
-  end
-
-  tempDirectory = string(outputDirectory,"TEMP/")
-
-  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory, bestImage)
-
-  imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(string(tempDirectory,newBestImage))
-  imageDepth = length(readdir(tempDirectory))
-
-  # Computing border matrix
-  info("Computing border matrix")
-  try
-    mkdir(string(outputDirectory, "BORDERS"))
-  catch
-  end
-  borderFilename = GenerateBorderMatrix.getOriented3BorderPath(string(outputDirectory, "BORDERS"), nx, ny, nz)
-
-  # Starting images convertion and border computation
-  info("Starting images convertion")
-  startImageConvertion(tempDirectory, newBestImage, outputDirectory, borderFilename,
-                       imageHeight, imageWidth, imageDepth,
-                       nx, ny, nz,
-                       numberOfClusters, parallelMerge)
-
-end
-
-function startImageConvertion(sliceDirectory, bestImage, outputDirectory, borderFilename,
-                              imageHeight, imageWidth, imageDepth,
-                              imageDx, imageDy, imageDz,
-                              numberOfClusters, parallelMerge)
-  """
-  Support function for converting a stack of images into a model
-
-  sliceDirectory: directory containing the image stack
-  imageForCentroids: image chosen for centroid computation
-  """
-
-  # Create clusters for image segmentation
-  info("Computing image centroids")
-  debug("Best image = ", bestImage)
-  centroidsCalc = PngStack2Array3dJulia.calculateClusterCentroids(sliceDirectory, bestImage, numberOfClusters)
-  debug(string("centroids = ", centroidsCalc))
-
-  try
-    mkdir(string(outputDirectory, "BORDERS"))
-  catch
-  end
-  debug(string("Opening border file: ", "border_", imageDx, "-", imageDy, "-", imageDz, ".json"))
-  boundaryMat = getBorderMatrix(string(outputDirectory,"BORDERS/","border_", imageDx, "-",
-                                       imageDy, "-", imageDz, ".json"))
-  beginImageStack = 0
-  endImage = beginImageStack
-
-  info("Converting images into a 3d model")
-  tasks = Array(RemoteRef, 0)
-  for zBlock in 0:(imageDepth / imageDz - 1)
-    startImage = endImage
-    endImage = startImage + imageDz
-    info("StartImage = ", startImage)
-    info("endImage = ", endImage)
-
-    task = @@spawn imageConvertionProcess(sliceDirectory, outputDirectory,
-                           beginImageStack, startImage, endImage,
-                           imageDx, imageDy, imageDz,
-                           imageHeight, imageWidth,
-                           centroidsCalc, boundaryMat)
-
-    push!(tasks, task)
-  end
-
-  # Waiting for tasks completion
-  for task in tasks
-    wait(task)
-  end
-
-  info("Merging boundaries")
-  # Merge Boundaries files
-  Model2Obj.mergeBoundaries(string(outputDirectory, "MODELS"),
-                            imageHeight, imageWidth, imageDepth,
-                            imageDx, imageDy, imageDz)
-
-  info("Merging obj models")
-  if parallelMerge
-    Model2Obj.mergeObjParallel(string(outputDirectory, "MODELS"))
-  else
-    Model2Obj.mergeObj(string(outputDirectory, "MODELS"))
-  end
-
-end
-
-function imageConvertionProcess(sliceDirectory, outputDirectory,
-                                beginImageStack, startImage, endImage,
-                                imageDx, imageDy, imageDz,
-                                imageHeight, imageWidth,
-                                centroids, boundaryMat)
-  """
-  Support function for converting a stack of image on a single
-  independent process
-  """
-
-  info("Transforming png data into 3d array")
-  theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory, startImage, endImage, centroids)
-
-  centroidsSorted = sort(vec(reshape(centroids, 1, 2)))
-  foreground = centroidsSorted[2]
-  background = centroidsSorted[1]
-  debug(string("background = ", background, " foreground = ", foreground))
-
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
-      yStart = xBlock * imageDx
-      xStart = yBlock * imageDy
-      #xEnd = xStart + imageDx
-      #yEnd = yStart + imageDy
-      xEnd = xStart + imageDy
-      yEnd = yStart + imageDx
-      debug("***********")
-      debug(string("xStart = ", xStart, " xEnd = ", xEnd))
-      debug(string("yStart = ", yStart, " yEnd = ", yEnd))
-      debug("theImage dimensions: ", size(theImage)[1], " ", size(theImage[1])[1], " ", size(theImage[1])[2])
-
-      # Getting a slice of theImage array
-
-      image = Array(Uint8, (convert(Int, length(theImage)), convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
-      debug("image size: ", size(image))
-      for z in 1:length(theImage)
-        for x in 1 : (xEnd - xStart)
-          for y in 1 : (yEnd - yStart)
-            image[z, x, y] = theImage[z][x + xStart, y + yStart]
-          end
-        end
-      end
-
-      nz, nx, ny = size(image)
-      chains3D = Array(Uint8, 0)
-      zStart = startImage - beginImageStack
-      for y in 0:(nx - 1)
-        for x in 0:(ny - 1)
-          for z in 0:(nz - 1)
-            if(image[z + 1, x + 1, y + 1] == foreground)
-              push!(chains3D, y + ny * (x + nx * z))
-            end
-          end
-        end
-      end
-
-      if(length(chains3D) != 0)
-        # Computing boundary chain
-        debug("chains3d = ", chains3D)
-        debug("Computing boundary chain")
-        objectBoundaryChain = Lar2Julia.larBoundaryChain(boundaryMat, chains3D)
-        debug("Converting models into obj")
-        try
-          mkdir(string(outputDirectory, "MODELS"))
-        catch
-        end
-        # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-        models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
-
-        V, FV = models[1][1] # inside model
-        V_left, FV_left = models[2][1]
-        V_right, FV_right = models[3][1] # right boundary
-        V_top, FV_top = models[4][1] # top boundary
-        V_bottom, FV_bottom = models[5][1] # bottom boundary
-        V_front, FV_front = models[6][1] # front boundary
-        V_back, FV_back = models[7][1] # back boundary
-
-        # Writing all models on disk
-        model_outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V, FV, model_outputFilename)
-
-        left_outputFilename = string(outputDirectory, "MODELS/left_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_left, FV_left, left_outputFilename)
-
-        right_outputFilename = string(outputDirectory, "MODELS/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_right, FV_right, right_outputFilename)
-
-        top_outputFilename = string(outputDirectory, "MODELS/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_top, FV_top, top_outputFilename)
-
-        bottom_outputFilename = string(outputDirectory, "MODELS/bottom_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_bottom, FV_bottom, bottom_outputFilename)
-
-        front_outputFilename = string(outputDirectory, "MODELS/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
-
-        back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
-      else
-        debug("Model is empty")
-      end
-    end
-  end
-end
-
-function getBorderMatrix(borderFilename)
-  """
-  TO REMOVE WHEN PORTING OF LARCC IN JULIA IS COMPLETED
-
-  Get the border matrix from json file and convert it in
-  CSC format
-  """
-  # Loading borderMatrix from json file
-  borderData = JSON.parsefile(borderFilename)
-  row = Array(Int64, length(borderData["ROW"]))
-  col = Array(Int64, length(borderData["COL"]))
-  data = Array(Int64, length(borderData["DATA"]))
-
-  for i in 1: length(borderData["ROW"])
-    row[i] = borderData["ROW"][i]
-  end
-
-  for i in 1: length(borderData["COL"])
-    col[i] = borderData["COL"][i]
-  end
-
-  for i in 1: length(borderData["DATA"])
-    data[i] = borderData["DATA"][i]
-  end
-
-  # Converting csr matrix to csc
-  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
-  denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
-
-  cscBoundaryMat = sparse(denseMatrix)
-
-  return cscBoundaryMat
-
-end
+@< image conversion process @>
 end
 @}
 
@@ -1059,6 +1159,7 @@ unshift!(PyVector(pyimport("sys")["path"]), "") # Search for python modules in f
 # Search for python modules in package folder
 unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
 @@pyimport larcc # Importing larcc from local folder
+@@pyimport scipy.sparse as Pysparse
 
 # Compute the 3-border operator
 function computeOriented3Border(nx, ny, nz)
@@ -1111,6 +1212,41 @@ function getOriented3BorderPath(borderPath, nx, ny, nz)
     writeBorder(border, filename)
   end
   return filename
+
+end
+
+function getBorderMatrix(borderFilename)
+  """
+  TO REMOVE WHEN PORTING OF LARCC IN JULIA IS COMPLETED
+
+  Get the border matrix from json file and convert it in
+  CSC format
+  """
+  # Loading borderMatrix from json file
+  borderData = JSON.parsefile(borderFilename)
+  row = Array(Int64, length(borderData["ROW"]))
+  col = Array(Int64, length(borderData["COL"]))
+  data = Array(Int64, length(borderData["DATA"]))
+
+  for i in 1: length(borderData["ROW"])
+    row[i] = borderData["ROW"][i]
+  end
+
+  for i in 1: length(borderData["COL"])
+    col[i] = borderData["COL"][i]
+  end
+
+  for i in 1: length(borderData["DATA"])
+    data[i] = borderData["DATA"][i]
+  end
+
+  # Converting csr matrix to csc
+  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
+  denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
+
+  cscBoundaryMat = sparse(denseMatrix)
+
+  return cscBoundaryMat
 
 end
 end

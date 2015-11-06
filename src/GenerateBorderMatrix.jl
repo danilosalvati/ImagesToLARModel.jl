@@ -21,6 +21,7 @@ unshift!(PyVector(pyimport("sys")["path"]), "") # Search for python modules in f
 # Search for python modules in package folder
 unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
 @pyimport larcc # Importing larcc from local folder
+@pyimport scipy.sparse as Pysparse
 
 # Compute the 3-border operator
 function computeOriented3Border(nx, ny, nz)
@@ -73,6 +74,41 @@ function getOriented3BorderPath(borderPath, nx, ny, nz)
     writeBorder(border, filename)
   end
   return filename
+
+end
+
+function getBorderMatrix(borderFilename)
+  """
+  TO REMOVE WHEN PORTING OF LARCC IN JULIA IS COMPLETED
+
+  Get the border matrix from json file and convert it in
+  CSC format
+  """
+  # Loading borderMatrix from json file
+  borderData = JSON.parsefile(borderFilename)
+  row = Array(Int64, length(borderData["ROW"]))
+  col = Array(Int64, length(borderData["COL"]))
+  data = Array(Int64, length(borderData["DATA"]))
+
+  for i in 1: length(borderData["ROW"])
+    row[i] = borderData["ROW"][i]
+  end
+
+  for i in 1: length(borderData["COL"])
+    col[i] = borderData["COL"][i]
+  end
+
+  for i in 1: length(borderData["DATA"])
+    data[i] = borderData["DATA"][i]
+  end
+
+  # Converting csr matrix to csc
+  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
+  denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
+
+  cscBoundaryMat = sparse(denseMatrix)
+
+  return cscBoundaryMat
 
 end
 end
