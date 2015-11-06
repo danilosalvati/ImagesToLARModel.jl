@@ -2,7 +2,6 @@
 
 ## ImagesToLARModel
 
-- Because of a bug in ImageMagick probably it would be better to create a bash script for convert dicom images to png (convert -define dcm:display-range=reset slice.0000.0002.dcm -normalize slice.0000.0002.png or convert -define dcm:display-range=reset slice.0000.0002.dcm -auto-level slice.0000.0002.png)
 - Implement a distributed algorithm for model smoothing
 
 ## PngStack2Array3dJulia

@@ -1032,8 +1032,6 @@ Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
 
 @}
 
-
-
 @D image conversion process
 @{function imageConversionProcess(sliceDirectory, outputDirectory,
                                 beginImageStack, startImage, endImage,
