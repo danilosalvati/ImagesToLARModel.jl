@@ -731,8 +731,6 @@ import Lar2Julia
 import Model2Obj
 import LARUtils
 
-import JSON
-
 using Logging
 
 export images2LARModel
@@ -1085,7 +1083,87 @@ end @}
 %===============================================================================
 \section{GenerateBorderMatrix}\label{sec:GenerateBorderMatrix}
 %===============================================================================
+This module has the reponsibility of generating the border matrix operator for models boundary computation.
 
+\subsection{Module imports}\label{sec:importsBorderMatrix}
+
+These are modules needed for this part of the package and the public functions exported
+
+@D modules import GenerateBorderMatrix
+@{import LARUtils
+using PyCall
+
+import JSON
+
+export computeOriented3Border, writeBorder, getOriented3BorderPath
+@}
+
+\subsection{Get border matrix from file}\label{sec:getBorderMatrix}
+
+As we have already seen in previous sections, we need to compute boundaries for every block of the model grid. This can be done using the topological boundary operator from LAR package. However, the resulting matrix depends only on grid sizes; so it could be reused for other models. Consequently first time we need a border operator we compute it and then save it on disk for next conversions. This function does that work searching for a file containing the border and, if it does not exist, calculate and save it: 
+
+@D get Border matrix
+@{function getOriented3BorderPath(borderPath, nx, ny, nz)
+  """
+  Try reading 3-border matrix from file. If it fails matrix
+  is computed and saved on disk in JSON format
+
+  borderPath: path of border directory
+  nx, ny, nz: image dimensions
+  """
+
+  filename = string(borderPath,"/border_", nx, "-", ny, "-", nz, ".json")
+  if !isfile(filename)
+    border = computeOriented3Border(nx, ny, nz)
+    writeBorder(border, filename)
+  end
+  return filename
+
+end @}
+
+\subsection{Write border matrix on file}\label{sec:writeBorderMatrix}
+
+We have already seen that for performance reasons border operator matrix is saved on file; here we will see code used for this scope. Firstly, we have defined a function \texttt{writeBorder}, which takes as parameters a \texttt{PyObject} containing a matrix (computed in subsection~\ref{sec:computeBorder}) and the outuput file path.
+
+@D write Border matrix
+@{function writeBorder(boundaryMatrix, outputFile)
+  """
+  Write 3-border matrix on json file
+
+  boundaryMatrix: matrix to write on file
+  outputFile: path of the outputFile
+  """
+
+  rowcount = boundaryMatrix[:shape][1]
+  colcount = boundaryMatrix[:shape][2]
+
+  row = boundaryMatrix[:indptr]
+  col = boundaryMatrix[:indices]
+  data = boundaryMatrix[:data]
+
+  # Writing informations on file
+  outfile = open(outputFile, "w")
+
+  matrixObj = MatrixObject(rowcount, colcount, row, col, data)
+  JSON.print(outfile, matrixObj)
+  close(outfile)
+
+end @}
+
+We can see that, in final JSON file, we write an object called \texttt{MatrixObject} which has the following definition:
+
+@D Matrix object for JSON file
+@{type MatrixObject
+  ROWCOUNT
+  COLCOUNT
+  ROW
+  COL
+  DATA
+end @}
+
+\subsection{Compute border matrix}\label{sec:computeBorder}
+
+\subsection{Transform border matrix}\label{sec:transformBorder}
 %===============================================================================
 \section{Lar2Julia}\label{sec:Lar2Julia}
 %===============================================================================

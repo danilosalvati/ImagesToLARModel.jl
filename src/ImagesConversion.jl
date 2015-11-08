@@ -6,8 +6,6 @@ import Lar2Julia
 import Model2Obj
 import LARUtils
 
-import JSON
-
 using Logging
 
 export images2LARModel

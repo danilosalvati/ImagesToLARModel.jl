@@ -731,8 +731,6 @@ import Lar2Julia
 import Model2Obj
 import LARUtils
 
-import JSON
-
 using Logging
 
 export images2LARModel
@@ -974,7 +972,7 @@ for y in 0:(nx - 1)
 end
 @}
 
-Now we have full cells for the geometry, we can convert it into a full \textit{LAR model}. In particular, we are interested in boundaries of every block (as we want to obtain only the boundaries for the final model) so we can call function \texttt{larBoundaryChain} from \texttt{Lar2Julia} module (which will be explained in section~\ref{sec:Lar2Julia}). In Figure~\ref{img:sampleBlocks} there are some examples of models extracted from a single 2x2x2 block.
+Now we have full cells for the geometry, we can convert it into a full \textit{LAR model}. In particular, we are interested in cell boundaries for every block (as we want to obtain only the boundaries for the final model) so we can call function \texttt{larBoundaryChain} from \texttt{Lar2Julia} module (which will be explained in section~\ref{sec:Lar2Julia}). In Figure~\ref{img:sampleBlocks} there are some examples of models extracted from a single 2x2x2 block.
 
 \begin{figure}[htb] %  figure placement: here, top, bottom
    \centering
@@ -984,9 +982,53 @@ Now we have full cells for the geometry, we can convert it into a full \textit{L
    \label{img:sampleBlocks}
 \end{figure}
 
-After model computation, next step is write results to file. However, as we have already said, we are only interested in boundaries of the final model while now we have only boundaries of a single block. Consequently, we have to separate boundaries from the inner faces of the block on different files (boundaries separation will be explained in section~\ref{sec:LARUtils}). As we can see later, we will merge boundaries together deleting 
+After model computation, next step is getting vertices and faces from model cells writing results to file. However, as we have already said, we are only interested in boundaries of the final model while now we have only boundaries of a single block. Consequently, we have to separate boundaries from the inner faces of the block on different files (boundaries separation will be explained in section~\ref{sec:LARUtils}). As we can see later, we will merge boundaries together deleting common faces on both block borders, obtaining a model without internal faces. These are pieces of code for getting the inner block model and the boundaries and for file writing:
 
+@D get inner model and boundaries
+@{# IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
+models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz,
+					    yStart, xStart, zStart, objectBoundaryChain)
 
+V, FV = models[1][1] # inside model
+V_left, FV_left = models[2][1]
+V_right, FV_right = models[3][1] # right boundary
+V_top, FV_top = models[4][1] # top boundary
+V_bottom, FV_bottom = models[5][1] # bottom boundary
+V_front, FV_front = models[6][1] # front boundary
+V_back, FV_back = models[7][1] # back boundary
+@}
+
+@D write block models to file
+@{# Writing all models on disk
+model_outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V, FV, model_outputFilename)
+
+left_outputFilename = string(outputDirectory, "MODELS/left_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_left, FV_left, left_outputFilename)
+
+right_outputFilename = string(outputDirectory, "MODELS/right_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_right, FV_right, right_outputFilename)
+
+top_outputFilename = string(outputDirectory, "MODELS/top_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_top, FV_top, top_outputFilename)
+
+bottom_outputFilename = string(outputDirectory, "MODELS/bottom_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_bottom, FV_bottom, bottom_outputFilename)
+
+front_outputFilename = string(outputDirectory, "MODELS/front_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
+
+back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock,
+				"-", yBlock, "_", startImage, "_", endImage)
+Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
+
+@}
 
 @D image conversion process
 @{function imageConversionProcess(sliceDirectory, outputDirectory,
@@ -1029,49 +1071,99 @@ After model computation, next step is write results to file. However, as we have
           mkdir(string(outputDirectory, "MODELS"))
         catch
         end
-        # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-        models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
-
-        V, FV = models[1][1] # inside model
-        V_left, FV_left = models[2][1]
-        V_right, FV_right = models[3][1] # right boundary
-        V_top, FV_top = models[4][1] # top boundary
-        V_bottom, FV_bottom = models[5][1] # bottom boundary
-        V_front, FV_front = models[6][1] # front boundary
-        V_back, FV_back = models[7][1] # back boundary
-
-        # Writing all models on disk
-        model_outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V, FV, model_outputFilename)
-
-        left_outputFilename = string(outputDirectory, "MODELS/left_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_left, FV_left, left_outputFilename)
-
-        right_outputFilename = string(outputDirectory, "MODELS/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_right, FV_right, right_outputFilename)
-
-        top_outputFilename = string(outputDirectory, "MODELS/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_top, FV_top, top_outputFilename)
-
-        bottom_outputFilename = string(outputDirectory, "MODELS/bottom_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_bottom, FV_bottom, bottom_outputFilename)
-
-        front_outputFilename = string(outputDirectory, "MODELS/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
-
-        back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
+        @< get inner model and boundaries @>
+        
+        @< write block models to file @>
       else
         debug("Model is empty")
       end
     end
   end
-end
-@}
+end @}
 %===============================================================================
 \section{GenerateBorderMatrix}\label{sec:GenerateBorderMatrix}
 %===============================================================================
+This module has the reponsibility of generating the border matrix operator for models boundary computation.
 
+\subsection{Module imports}\label{sec:importsBorderMatrix}
+
+These are modules needed for this part of the package and the public functions exported
+
+@D modules import GenerateBorderMatrix
+@{import LARUtils
+using PyCall
+
+import JSON
+
+export computeOriented3Border, writeBorder, getOriented3BorderPath
+@}
+
+\subsection{Get border matrix from file}\label{sec:getBorderMatrix}
+
+As we have already seen in previous sections, we need to compute boundaries for every block of the model grid. This can be done using the topological boundary operator from LAR package. However, the resulting matrix depends only on grid sizes; so it could be reused for other models. Consequently first time we need a border operator we compute it and then save it on disk for next conversions. This function does that work searching for a file containing the border and, if it does not exist, calculate and save it: 
+
+@D get Border matrix
+@{function getOriented3BorderPath(borderPath, nx, ny, nz)
+  """
+  Try reading 3-border matrix from file. If it fails matrix
+  is computed and saved on disk in JSON format
+
+  borderPath: path of border directory
+  nx, ny, nz: image dimensions
+  """
+
+  filename = string(borderPath,"/border_", nx, "-", ny, "-", nz, ".json")
+  if !isfile(filename)
+    border = computeOriented3Border(nx, ny, nz)
+    writeBorder(border, filename)
+  end
+  return filename
+
+end @}
+
+\subsection{Write border matrix on file}\label{sec:writeBorderMatrix}
+
+Come abbiamo appena visto, per motivi di efficienza la matrice dell'operatore di bordo viene memorizzata su un file. Qui vediamo il codice per farlo. Come prima cosa è stata definita una funzione \texttt{writeBorder} che prende come input un \texttt{PyObject} contenente la matrice (calcolata nella subsection~\ref{sec:computeBorder}) e il nome del file di output.
+
+@D write Border matrix
+@{function writeBorder(boundaryMatrix, outputFile)
+  """
+  Write 3-border matrix on json file
+
+  boundaryMatrix: matrix to write on file
+  outputFile: path of the outputFile
+  """
+
+  rowcount = boundaryMatrix[:shape][1]
+  colcount = boundaryMatrix[:shape][2]
+
+  row = boundaryMatrix[:indptr]
+  col = boundaryMatrix[:indices]
+  data = boundaryMatrix[:data]
+
+  # Writing informations on file
+  outfile = open(outputFile, "w")
+
+  matrixObj = MatrixObject(rowcount, colcount, row, col, data)
+  JSON.print(outfile, matrixObj)
+  close(outfile)
+
+end @}
+
+Come si può notare, nel file JSON risultante andiamo a scrivere un oggetto chiamato \texttt{MatrixObject} la cui definizione è la seguente:
+
+@D Matrix object for JSON file
+@{type MatrixObject
+  ROWCOUNT
+  COLCOUNT
+  ROW
+  COL
+  DATA
+end @}
+
+\subsection{Compute border matrix}\label{sec:computeBorder}
+
+\subsection{Transform border matrix}\label{sec:transformBorder}
 %===============================================================================
 \section{Lar2Julia}\label{sec:Lar2Julia}
 %===============================================================================
@@ -1107,226 +1199,13 @@ end
 @O src/ImagesConversion.jl
 @{module ImagesConversion
 
-import GenerateBorderMatrix
-import PngStack2Array3dJulia
-import Lar2Julia
-import Model2Obj
-import LARUtils
+@< modules import ImagesConversion @>
 
-import JSON
+@< main function for ImagesConversion @>
 
-using Logging
+@< start conversion of images @>
 
-export images2LARModel
-
-function images2LARModel(nx, ny, nz, bestImage, inputDirectory, outputDirectory, parallelMerge)
-  """
-  Convert a stack of images into a 3d model
-  """
-
-  info("Starting model creation")
-
-  numberOfClusters = 2 # Number of clusters for
-                       # images segmentation
-
-  info("Moving images into temp directory")
-  try
-    mkdir(string(outputDirectory, "TEMP"))
-  catch
-  end
-
-  tempDirectory = string(outputDirectory,"TEMP/")
-
-  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory, bestImage)
-
-  imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(string(tempDirectory,newBestImage))
-  imageDepth = length(readdir(tempDirectory))
-
-  # Computing border matrix
-  info("Computing border matrix")
-  try
-    mkdir(string(outputDirectory, "BORDERS"))
-  catch
-  end
-  borderFilename = GenerateBorderMatrix.getOriented3BorderPath(string(outputDirectory, "BORDERS"), nx, ny, nz)
-
-  # Starting images conversion and border computation
-  info("Starting images conversion")
-  startImageConversion(tempDirectory, newBestImage, outputDirectory, borderFilename,
-                       imageHeight, imageWidth, imageDepth,
-                       nx, ny, nz,
-                       numberOfClusters, parallelMerge)
-
-end
-
-function startImageConversion(sliceDirectory, bestImage, outputDirectory, borderFilename,
-                              imageHeight, imageWidth, imageDepth,
-                              imageDx, imageDy, imageDz,
-                              numberOfClusters, parallelMerge)
-  """
-  Support function for converting a stack of images into a model
-
-  sliceDirectory: directory containing the image stack
-  imageForCentroids: image chosen for centroid computation
-  """
-
-  # Create clusters for image segmentation
-  info("Computing image centroids")
-  debug("Best image = ", bestImage)
-  centroidsCalc = PngStack2Array3dJulia.calculateClusterCentroids(sliceDirectory, bestImage, numberOfClusters)
-  debug(string("centroids = ", centroidsCalc))
-
-  try
-    mkdir(string(outputDirectory, "BORDERS"))
-  catch
-  end
-  debug(string("Opening border file: ", "border_", imageDx, "-", imageDy, "-", imageDz, ".json"))
-  boundaryMat = GenerateBorderMatrix.getBorderMatrix(string(outputDirectory,"BORDERS/","border_", imageDx, "-",
-                                       imageDy, "-", imageDz, ".json"))
-  beginImageStack = 0
-  endImage = beginImageStack
-
-  info("Converting images into a 3d model")
-  tasks = Array(RemoteRef, 0)
-  for zBlock in 0:(imageDepth / imageDz - 1)
-    startImage = endImage
-    endImage = startImage + imageDz
-    info("StartImage = ", startImage)
-    info("endImage = ", endImage)
-
-    task = @@spawn imageConversionProcess(sliceDirectory, outputDirectory,
-                           beginImageStack, startImage, endImage,
-                           imageDx, imageDy, imageDz,
-                           imageHeight, imageWidth,
-                           centroidsCalc, boundaryMat)
-
-    push!(tasks, task)
-  end
-
-  # Waiting for tasks completion
-  for task in tasks
-    wait(task)
-  end
-
-  info("Merging boundaries")
-  # Merge Boundaries files
-  Model2Obj.mergeBoundaries(string(outputDirectory, "MODELS"),
-                            imageHeight, imageWidth, imageDepth,
-                            imageDx, imageDy, imageDz)
-
-  info("Merging obj models")
-  if parallelMerge
-    Model2Obj.mergeObjParallel(string(outputDirectory, "MODELS"))
-  else
-    Model2Obj.mergeObj(string(outputDirectory, "MODELS"))
-  end
-
-end
-
-function imageConversionProcess(sliceDirectory, outputDirectory,
-                                beginImageStack, startImage, endImage,
-                                imageDx, imageDy, imageDz,
-                                imageHeight, imageWidth,
-                                centroids, boundaryMat)
-  """
-  Support function for converting a stack of image on a single
-  independent process
-  """
-
-  info("Transforming png data into 3d array")
-  theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory, startImage, endImage, centroids)
-
-  centroidsSorted = sort(vec(reshape(centroids, 1, 2)))
-  foreground = centroidsSorted[2]
-  background = centroidsSorted[1]
-  debug(string("background = ", background, " foreground = ", foreground))
-
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
-      yStart = xBlock * imageDx
-      xStart = yBlock * imageDy
-      #xEnd = xStart + imageDx
-      #yEnd = yStart + imageDy
-      xEnd = xStart + imageDy
-      yEnd = yStart + imageDx
-      debug("***********")
-      debug(string("xStart = ", xStart, " xEnd = ", xEnd))
-      debug(string("yStart = ", yStart, " yEnd = ", yEnd))
-      debug("theImage dimensions: ", size(theImage)[1], " ", size(theImage[1])[1], " ", size(theImage[1])[2])
-
-      # Getting a slice of theImage array
-
-      image = Array(Uint8, (convert(Int, length(theImage)), convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
-      debug("image size: ", size(image))
-      for z in 1:length(theImage)
-        for x in 1 : (xEnd - xStart)
-          for y in 1 : (yEnd - yStart)
-            image[z, x, y] = theImage[z][x + xStart, y + yStart]
-          end
-        end
-      end
-
-      nz, nx, ny = size(image)
-      chains3D = Array(Uint8, 0)
-      zStart = startImage - beginImageStack
-      for y in 0:(nx - 1)
-        for x in 0:(ny - 1)
-          for z in 0:(nz - 1)
-            if(image[z + 1, x + 1, y + 1] == foreground)
-              push!(chains3D, y + ny * (x + nx * z))
-            end
-          end
-        end
-      end
-
-      if(length(chains3D) != 0)
-        # Computing boundary chain
-        debug("chains3d = ", chains3D)
-        debug("Computing boundary chain")
-        objectBoundaryChain = Lar2Julia.larBoundaryChain(boundaryMat, chains3D)
-        debug("Converting models into obj")
-        try
-          mkdir(string(outputDirectory, "MODELS"))
-        catch
-        end
-        # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-        models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz, yStart, xStart, zStart, objectBoundaryChain)
-
-        V, FV = models[1][1] # inside model
-        V_left, FV_left = models[2][1]
-        V_right, FV_right = models[3][1] # right boundary
-        V_top, FV_top = models[4][1] # top boundary
-        V_bottom, FV_bottom = models[5][1] # bottom boundary
-        V_front, FV_front = models[6][1] # front boundary
-        V_back, FV_back = models[7][1] # back boundary
-
-        # Writing all models on disk
-        model_outputFilename = string(outputDirectory, "MODELS/model_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V, FV, model_outputFilename)
-
-        left_outputFilename = string(outputDirectory, "MODELS/left_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_left, FV_left, left_outputFilename)
-
-        right_outputFilename = string(outputDirectory, "MODELS/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_right, FV_right, right_outputFilename)
-
-        top_outputFilename = string(outputDirectory, "MODELS/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_top, FV_top, top_outputFilename)
-
-        bottom_outputFilename = string(outputDirectory, "MODELS/bottom_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_bottom, FV_bottom, bottom_outputFilename)
-
-        front_outputFilename = string(outputDirectory, "MODELS/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
-
-        back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
-      else
-        debug("Model is empty")
-      end
-    end
-  end
-end
+@< image conversion process @>
 end
 @}
 
