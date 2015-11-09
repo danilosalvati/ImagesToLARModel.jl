@@ -6,22 +6,20 @@ type MatrixObject
   ROW
   COL
   DATA
-end
-
-
-export computeOriented3Border, writeBorder, getOriented3BorderPath
+end 
 
 import LARUtils
 using PyCall
 
 import JSON
 
+export computeOriented3Border, writeBorder, getOriented3BorderPath
+
 @pyimport sys
-unshift!(PyVector(pyimport("sys")["path"]), "") # Search for python modules in folder
 # Search for python modules in package folder
 unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
 @pyimport larcc # Importing larcc from local folder
-@pyimport scipy.sparse as Pysparse
+@pyimport scipy.sparse as Pysparse 
 
 # Compute the 3-border operator
 function computeOriented3Border(nx, ny, nz)
@@ -33,7 +31,7 @@ function computeOriented3Border(nx, ny, nz)
   boundaryMat = larcc.signedCellularBoundary(V, bases)
   return boundaryMat
 
-end
+end 
 
 function writeBorder(boundaryMatrix, outputFile)
   """
@@ -57,7 +55,7 @@ function writeBorder(boundaryMatrix, outputFile)
   JSON.print(outfile, matrixObj)
   close(outfile)
 
-end
+end 
 
 function getOriented3BorderPath(borderPath, nx, ny, nz)
   """
@@ -75,7 +73,7 @@ function getOriented3BorderPath(borderPath, nx, ny, nz)
   end
   return filename
 
-end
+end 
 
 function getBorderMatrix(borderFilename)
   """
@@ -110,5 +108,5 @@ function getBorderMatrix(borderFilename)
 
   return cscBoundaryMat
 
-end
+end 
 end

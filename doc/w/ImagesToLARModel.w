@@ -425,7 +425,7 @@ if(numberOfImages % 2 != 0)
     imageHeight -= 1
   end  
   
-  imArray = zeros(Uint8, (imageWidth, imageHeight))
+  imArray = zeros(Uint8, imageWidth, imageHeight)
   img = grayim(imArray)
   outputFilename = string(outputPath, "/", 
 		      outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
@@ -1096,7 +1096,14 @@ using PyCall
 import JSON
 
 export computeOriented3Border, writeBorder, getOriented3BorderPath
-@}
+
+@@pyimport sys
+# Search for python modules in package folder
+unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
+@@pyimport larcc # Importing larcc from local folder
+@@pyimport scipy.sparse as Pysparse @}
+
+We can notice some lines for importing \texttt{larcc} python library, which will be used in subsection~\ref{sec:transformBorder}
 
 \subsection{Get border matrix from file}\label{sec:getBorderMatrix}
 
@@ -1163,7 +1170,61 @@ end @}
 
 \subsection{Compute border matrix}\label{sec:computeBorder}
 
+Here we can see code used for computation of the border operator. As we can see, we call the python \texttt{larcc} module, from the LAR module, which returns a \texttt{PyObject} containing a \textit{sparse csr matrix}. In next versions this function will be probably changed and the code for boundary computation will be moved in \texttt{LAR2Julia} module (also transforming all csr matrix in csc matrix) avoiding python calls.
+
+@D compute border matrix
+@{# Compute the 3-border operator
+function computeOriented3Border(nx, ny, nz)
+  """
+  Compute the 3-border matrix using a modified
+  version of larcc
+  """
+  V, bases = LARUtils.getBases(nx, ny, nz)
+  boundaryMat = larcc.signedCellularBoundary(V, bases)
+  return boundaryMat
+
+end @}
+
 \subsection{Transform border matrix}\label{sec:transformBorder}
+
+We have seen that matrix stored in JSON file was in csr matrix as it was returned from \texttt{larcc} module of LAR library. However, Julia has only sparse matrices in csc format, so we need a function for loading the contents of JSON file converting the output for next uses with Julia libraries. When porting of \texttt{larcc} in Julia will be complete, we can safely remove this function
+
+@D transform border matrix in csc format
+@{function getBorderMatrix(borderFilename)
+  """
+  TO REMOVE WHEN PORTING OF LARCC IN JULIA IS COMPLETED
+
+  Get the border matrix from json file and convert it in
+  CSC format
+  """
+  # Loading borderMatrix from json file
+  borderData = JSON.parsefile(borderFilename)
+  row = Array(Int64, length(borderData["ROW"]))
+  col = Array(Int64, length(borderData["COL"]))
+  data = Array(Int64, length(borderData["DATA"]))
+
+  for i in 1: length(borderData["ROW"])
+    row[i] = borderData["ROW"][i]
+  end
+
+  for i in 1: length(borderData["COL"])
+    col[i] = borderData["COL"][i]
+  end
+
+  for i in 1: length(borderData["DATA"])
+    data[i] = borderData["DATA"][i]
+  end
+
+  # Converting csr matrix to csc
+  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
+  denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
+
+  cscBoundaryMat = sparse(denseMatrix)
+
+  return cscBoundaryMat
+
+end @}
+
 %===============================================================================
 \section{Lar2Julia}\label{sec:Lar2Julia}
 %===============================================================================
@@ -1214,117 +1275,17 @@ end
 @O src/GenerateBorderMatrix.jl
 @{module GenerateBorderMatrix
 
-type MatrixObject
-  ROWCOUNT
-  COLCOUNT
-  ROW
-  COL
-  DATA
-end
+@< Matrix object for JSON file @>
 
+@< modules import GenerateBorderMatrix @>
 
-export computeOriented3Border, writeBorder, getOriented3BorderPath
+@< compute border matrix @>
 
-import LARUtils
-using PyCall
+@< write Border matrix  @>
 
-import JSON
+@< get Border matrix @>
 
-@@pyimport sys
-unshift!(PyVector(pyimport("sys")["path"]), "") # Search for python modules in folder
-# Search for python modules in package folder
-unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
-@@pyimport larcc # Importing larcc from local folder
-@@pyimport scipy.sparse as Pysparse
-
-# Compute the 3-border operator
-function computeOriented3Border(nx, ny, nz)
-  """
-  Compute the 3-border matrix using a modified
-  version of larcc
-  """
-  V, bases = LARUtils.getBases(nx, ny, nz)
-  boundaryMat = larcc.signedCellularBoundary(V, bases)
-  return boundaryMat
-
-end
-
-function writeBorder(boundaryMatrix, outputFile)
-  """
-  Write 3-border matrix on json file
-
-  boundaryMatrix: matrix to write on file
-  outputFile: path of the outputFile
-  """
-
-  rowcount = boundaryMatrix[:shape][1]
-  colcount = boundaryMatrix[:shape][2]
-
-  row = boundaryMatrix[:indptr]
-  col = boundaryMatrix[:indices]
-  data = boundaryMatrix[:data]
-
-  # Writing informations on file
-  outfile = open(outputFile, "w")
-
-  matrixObj = MatrixObject(rowcount, colcount, row, col, data)
-  JSON.print(outfile, matrixObj)
-  close(outfile)
-
-end
-
-function getOriented3BorderPath(borderPath, nx, ny, nz)
-  """
-  Try reading 3-border matrix from file. If it fails matrix
-  is computed and saved on disk in JSON format
-
-  borderPath: path of border directory
-  nx, ny, nz: image dimensions
-  """
-
-  filename = string(borderPath,"/border_", nx, "-", ny, "-", nz, ".json")
-  if !isfile(filename)
-    border = computeOriented3Border(nx, ny, nz)
-    writeBorder(border, filename)
-  end
-  return filename
-
-end
-
-function getBorderMatrix(borderFilename)
-  """
-  TO REMOVE WHEN PORTING OF LARCC IN JULIA IS COMPLETED
-
-  Get the border matrix from json file and convert it in
-  CSC format
-  """
-  # Loading borderMatrix from json file
-  borderData = JSON.parsefile(borderFilename)
-  row = Array(Int64, length(borderData["ROW"]))
-  col = Array(Int64, length(borderData["COL"]))
-  data = Array(Int64, length(borderData["DATA"]))
-
-  for i in 1: length(borderData["ROW"])
-    row[i] = borderData["ROW"][i]
-  end
-
-  for i in 1: length(borderData["COL"])
-    col[i] = borderData["COL"][i]
-  end
-
-  for i in 1: length(borderData["DATA"])
-    data[i] = borderData["DATA"][i]
-  end
-
-  # Converting csr matrix to csc
-  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
-  denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
-
-  cscBoundaryMat = sparse(denseMatrix)
-
-  return cscBoundaryMat
-
-end
+@< transform border matrix in csc format @>
 end
 @}
 

@@ -82,7 +82,7 @@ function convertImages(inputPath, outputPath, bestImage)
       imageHeight -= 1
     end  
     
-    imArray = zeros(Uint8, (imageWidth, imageHeight))
+    imArray = zeros(Uint8, imageWidth, imageHeight)
     img = grayim(imArray)
     outputFilename = string(outputPath, "/", 
                         outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
