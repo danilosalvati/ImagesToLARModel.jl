@@ -1228,11 +1228,114 @@ end @}
 %===============================================================================
 \section{Lar2Julia}\label{sec:Lar2Julia}
 %===============================================================================
+This module contains function used in LAR library which are converted using Julia syntax. Next versions of the software will contain more and more functions from the original LAR library (which is written in python)
 
+\subsection{Module imports}\label{sec:Lar2JuliaImports}
+
+These are modules used for \texttt{Lar2Julia} and the public functions
+
+@D modules import Lar2Julia
+@{import JSON
+
+using Logging
+
+export larBoundaryChain, cscChainToCellList @}
+
+\subsection{Get boundary chain from a model}\label{sec:boundaryChain}
+
+Now we will observe how to compute the boundary chain of a LAR model given the list of non-empty cells and the boundary operator stored as a csc sparse matrix.
+This algorithm is very simply: firstly we need to convert the list of cells into a sparse array containing the LAR model.
+So, the resulting array (which will be called \texttt{cscChain}) will contain a one  for every cscChain[ i ][ 1 ] $\forall i \in$ \texttt{brcCellList}. Next, we just have to compute the product between the two sparse matrices and convert all values of the result into one of these: \{-1; +1; 0\} using function \texttt{cscBinFilter}.
+
+@D get boundary chain
+@{function larBoundaryChain(cscBoundaryMat, brcCellList)
+  """
+  Compute boundary chains
+  """
+
+  # Computing boundary chains
+  n = size(cscBoundaryMat)[1]
+  m = size(cscBoundaryMat)[2]
+
+  debug("Boundary matrix size: ", n, "\t", m)
+
+  data = ones(Int64, length(brcCellList))
+
+  i = Array(Int64, length(brcCellList))
+  for k in 1:length(brcCellList)
+    i[k] = brcCellList[k] + 1
+  end
+
+  j = ones(Int64, length(brcCellList))
+
+  debug("cscChain rows length: ", length(i))
+  debug("cscChain columns length: ", length(j))
+  debug("cscChain data length: ", length(brcCellList))
+
+  debug("rows ", i)
+  debug("columns ", j)
+  debug("data ", data)
+
+  cscChain = sparse(i, j, data, m, 1)
+  cscmat = cscBoundaryMat * cscChain
+  out = cscBinFilter(cscmat)
+  return out
+end
+
+function cscBinFilter(CSCm)
+  k = 1
+  data = nonzeros(CSCm)
+  sgArray = copysign(1, data)
+
+  while k <= nnz(CSCm)
+    if data[k] % 2 == 1 || data[k] % 2 == -1
+      data[k] = 1 * sgArray[k]
+    else
+      data[k] = 0
+    end
+    k += 1
+  end
+
+  return CSCm
+end
+@}
+
+\subsection{Get oriented cells from a chain}\label{sec:getCellsFromChain}
+
+Another operation that could be useful (even if it is not actually used in the package) consists in getting of \textit{``+1''} oriented cells from a chain. For obtaining this result, it is necessary to get all non-zeros element from the sparse Julia array (remembering that if the user manually write a zero into the array it will be returned from \texttt{nonzeros} function anyway) and then returning only indices of cells that have a ``+1'' in nonzero element array.
+
+@D get oriented cells from a chain
+@{function cscChainToCellList(CSCm)
+  """
+  Get a csc containing a chain and returns
+  the cell list of the "+1" oriented faces
+  """
+  data = nonzeros(CSCm)
+  # Now I need to remove zero element (problem with Julia nonzeros)
+  nonzeroData = Array(Int64, 0)
+  for n in data
+    if n != 0
+      push!(nonzeroData, n)
+    end
+  end
+
+  cellList = Array(Int64,0)
+  for (k, theRow) in enumerate(findn(CSCm)[1])
+    if nonzeroData[k] == 1
+      push!(cellList, theRow)
+    end
+  end
+  return cellList
+end @}
 %===============================================================================
 \section{LARUtils}\label{sec:LARUtils}
 %===============================================================================
 
+\subsection{Module imports}\label{sec:LARUtilsImports}
+
+\subsection{Transformation from matrix to array}\label{sec:matrixTransform}
+
+\subsection{get bases of a LAR model}\label{sec:getBases}
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================
@@ -1294,85 +1397,11 @@ end
 @O src/Lar2Julia.jl
 @{module Lar2Julia
 
-export larBoundaryChain, cscChainToCellList
+@< modules import Lar2Julia @>
 
-import JSON
+@< get boundary chain @>
 
-using Logging
-
-function larBoundaryChain(cscBoundaryMat, brcCellList)
-  """
-  Compute boundary chains
-  """
-
-  # Computing boundary chains
-  n = size(cscBoundaryMat)[1]
-  m = size(cscBoundaryMat)[2]
-
-  debug("Boundary matrix size: ", n, "\t", m)
-
-  data = ones(Int64, length(brcCellList))
-
-  i = Array(Int64, length(brcCellList))
-  for k in 1:length(brcCellList)
-    i[k] = brcCellList[k] + 1
-  end
-
-  j = ones(Int64, length(brcCellList))
-
-  debug("cscChain rows length: ", length(i))
-  debug("cscChain columns length: ", length(j))
-  debug("cscChain data length: ", length(brcCellList))
-
-  debug("rows ", i)
-  debug("columns ", j)
-  debug("data ", data)
-
-  cscChain = sparse(i, j, data, m, 1)
-  cscmat = cscBoundaryMat * cscChain
-  out = cscBinFilter(cscmat)
-  return out
-end
-
-function cscBinFilter(CSCm)
-  k = 1
-  data = nonzeros(CSCm)
-  sgArray = copysign(1, data)
-
-  while k <= nnz(CSCm)
-    if data[k] % 2 == 1 || data[k] % 2 == -1
-      data[k] = 1 * sgArray[k]
-    else
-      data[k] = 0
-    end
-    k += 1
-  end
-
-  return CSCm
-end
-
-function cscChainToCellList(CSCm)
-  """
-  Get a csc containing a chain and returns
-  the cell list of the "+1" oriented faces
-  """
-  data = nonzeros(CSCm)
-  # Now I need to remove zero element (problem with Julia nonzeros)
-  nonzeroData = Array(Int64, 0)
-  for n in data
-    if n != 0
-      push!(nonzeroData, n)
-    end
-  end
-
-  cellList = Array(Int64,0)
-  for (k, theRow) in enumerate(findn(CSCm)[1])
-    if nonzeroData[k] == 1
-      push!(cellList, theRow)
-    end
-  end
-  return cellList
-end
+@< get oriented cells from a chain @>
 end
 @}
 

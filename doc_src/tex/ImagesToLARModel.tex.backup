@@ -1098,13 +1098,12 @@ import JSON
 export computeOriented3Border, writeBorder, getOriented3BorderPath
 
 @@pyimport sys
-unshift!(PyVector(pyimport("sys")["path"]), "") # Search for python modules in folder
 # Search for python modules in package folder
 unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
 @@pyimport larcc # Importing larcc from local folder
-@@pyimport scipy.sparse as Pysparse
+@@pyimport scipy.sparse as Pysparse @}
 
-@}
+We can notice some lines for importing \texttt{larcc} python library, which will be used in subsection~\ref{sec:transformBorder}
 
 \subsection{Get border matrix from file}\label{sec:getBorderMatrix}
 
@@ -1229,11 +1228,114 @@ end @}
 %===============================================================================
 \section{Lar2Julia}\label{sec:Lar2Julia}
 %===============================================================================
+This module contains function used in LAR library which are converted using Julia syntax. Next versions of the software will contain more and more functions from the original LAR library (which is written in python)
 
+\subsection{Module imports}\label{sec:Lar2JuliaImports}
+
+These are modules used for \texttt{Lar2Julia} and the public functions
+
+@D modules import Lar2Julia
+@{import JSON
+
+using Logging
+
+export larBoundaryChain, cscChainToCellList @}
+
+\subsection{Get boundary chain from a model}\label{sec:boundaryChain}
+
+Now we will observe how to compute the boundary chain of a LAR model given the list of non-empty cells and the boundary operator stored as a csc sparse matrix.
+This algorithm is very simply: firstly we need to convert the list of cells into a sparse array containing the LAR model.
+So, the resulting array (which will be called \texttt{cscChain}) will contain a one  for every cscChain[ i ][ 1 ] $\forall i \in$ \texttt{brcCellList}. Next, we just have to compute the product between the two sparse matrices and convert all values of the result into one of these: \{-1; +1; 0\} using function \texttt{cscBinFilter}.
+
+@D get boundary chain
+@{function larBoundaryChain(cscBoundaryMat, brcCellList)
+  """
+  Compute boundary chains
+  """
+
+  # Computing boundary chains
+  n = size(cscBoundaryMat)[1]
+  m = size(cscBoundaryMat)[2]
+
+  debug("Boundary matrix size: ", n, "\t", m)
+
+  data = ones(Int64, length(brcCellList))
+
+  i = Array(Int64, length(brcCellList))
+  for k in 1:length(brcCellList)
+    i[k] = brcCellList[k] + 1
+  end
+
+  j = ones(Int64, length(brcCellList))
+
+  debug("cscChain rows length: ", length(i))
+  debug("cscChain columns length: ", length(j))
+  debug("cscChain data length: ", length(brcCellList))
+
+  debug("rows ", i)
+  debug("columns ", j)
+  debug("data ", data)
+
+  cscChain = sparse(i, j, data, m, 1)
+  cscmat = cscBoundaryMat * cscChain
+  out = cscBinFilter(cscmat)
+  return out
+end
+
+function cscBinFilter(CSCm)
+  k = 1
+  data = nonzeros(CSCm)
+  sgArray = copysign(1, data)
+
+  while k <= nnz(CSCm)
+    if data[k] % 2 == 1 || data[k] % 2 == -1
+      data[k] = 1 * sgArray[k]
+    else
+      data[k] = 0
+    end
+    k += 1
+  end
+
+  return CSCm
+end
+@}
+
+\subsection{Get oriented cells from a chain}\label{sec:getCellsFromChain}
+
+Another operation that could be useful (althought it is not actually used in the package) it is getting of \textit{``+1''} oriented cells from a chain.
+
+@D get oriented cells from a chain
+@{function cscChainToCellList(CSCm)
+  """
+  Get a csc containing a chain and returns
+  the cell list of the "+1" oriented faces
+  """
+  data = nonzeros(CSCm)
+  # Now I need to remove zero element (problem with Julia nonzeros)
+  nonzeroData = Array(Int64, 0)
+  for n in data
+    if n != 0
+      push!(nonzeroData, n)
+    end
+  end
+
+  cellList = Array(Int64,0)
+  for (k, theRow) in enumerate(findn(CSCm)[1])
+    if nonzeroData[k] == 1
+      push!(cellList, theRow)
+    end
+  end
+  return cellList
+end @}
 %===============================================================================
 \section{LARUtils}\label{sec:LARUtils}
 %===============================================================================
 
+\subsection{Module imports}\label{sec:LARUtilsImports}
+
+\subsection{Transformation from matrix to array}\label{sec:matrixTransform}
+
+\subsection{get bases of a LAR model}\label{sec:getBases}
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================
@@ -1276,117 +1378,17 @@ end
 @O src/GenerateBorderMatrix.jl
 @{module GenerateBorderMatrix
 
-type MatrixObject
-  ROWCOUNT
-  COLCOUNT
-  ROW
-  COL
-  DATA
-end
+@< Matrix object for JSON file @>
 
+@< modules import GenerateBorderMatrix @>
 
-export computeOriented3Border, writeBorder, getOriented3BorderPath
+@< compute border matrix @>
 
-import LARUtils
-using PyCall
+@< write Border matrix  @>
 
-import JSON
+@< get Border matrix @>
 
-@@pyimport sys
-unshift!(PyVector(pyimport("sys")["path"]), "") # Search for python modules in folder
-# Search for python modules in package folder
-unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
-@@pyimport larcc # Importing larcc from local folder
-@@pyimport scipy.sparse as Pysparse
-
-# Compute the 3-border operator
-function computeOriented3Border(nx, ny, nz)
-  """
-  Compute the 3-border matrix using a modified
-  version of larcc
-  """
-  V, bases = LARUtils.getBases(nx, ny, nz)
-  boundaryMat = larcc.signedCellularBoundary(V, bases)
-  return boundaryMat
-
-end
-
-function writeBorder(boundaryMatrix, outputFile)
-  """
-  Write 3-border matrix on json file
-
-  boundaryMatrix: matrix to write on file
-  outputFile: path of the outputFile
-  """
-
-  rowcount = boundaryMatrix[:shape][1]
-  colcount = boundaryMatrix[:shape][2]
-
-  row = boundaryMatrix[:indptr]
-  col = boundaryMatrix[:indices]
-  data = boundaryMatrix[:data]
-
-  # Writing informations on file
-  outfile = open(outputFile, "w")
-
-  matrixObj = MatrixObject(rowcount, colcount, row, col, data)
-  JSON.print(outfile, matrixObj)
-  close(outfile)
-
-end
-
-function getOriented3BorderPath(borderPath, nx, ny, nz)
-  """
-  Try reading 3-border matrix from file. If it fails matrix
-  is computed and saved on disk in JSON format
-
-  borderPath: path of border directory
-  nx, ny, nz: image dimensions
-  """
-
-  filename = string(borderPath,"/border_", nx, "-", ny, "-", nz, ".json")
-  if !isfile(filename)
-    border = computeOriented3Border(nx, ny, nz)
-    writeBorder(border, filename)
-  end
-  return filename
-
-end
-
-function getBorderMatrix(borderFilename)
-  """
-  TO REMOVE WHEN PORTING OF LARCC IN JULIA IS COMPLETED
-
-  Get the border matrix from json file and convert it in
-  CSC format
-  """
-  # Loading borderMatrix from json file
-  borderData = JSON.parsefile(borderFilename)
-  row = Array(Int64, length(borderData["ROW"]))
-  col = Array(Int64, length(borderData["COL"]))
-  data = Array(Int64, length(borderData["DATA"]))
-
-  for i in 1: length(borderData["ROW"])
-    row[i] = borderData["ROW"][i]
-  end
-
-  for i in 1: length(borderData["COL"])
-    col[i] = borderData["COL"][i]
-  end
-
-  for i in 1: length(borderData["DATA"])
-    data[i] = borderData["DATA"][i]
-  end
-
-  # Converting csr matrix to csc
-  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
-  denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
-
-  cscBoundaryMat = sparse(denseMatrix)
-
-  return cscBoundaryMat
-
-end
+@< transform border matrix in csc format @>
 end
 @}
 

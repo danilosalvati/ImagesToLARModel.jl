@@ -1,10 +1,10 @@
 module Lar2Julia
 
-export larBoundaryChain, cscChainToCellList
-
 import JSON
 
 using Logging
+
+export larBoundaryChain, cscChainToCellList 
 
 function larBoundaryChain(cscBoundaryMat, brcCellList)
   """
@@ -57,6 +57,7 @@ function cscBinFilter(CSCm)
   return CSCm
 end
 
+
 function cscChainToCellList(CSCm)
   """
   Get a csc containing a chain and returns
@@ -78,5 +79,5 @@ function cscChainToCellList(CSCm)
     end
   end
   return cellList
-end
+end 
 end
