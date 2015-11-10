@@ -101,7 +101,8 @@ function getBorderMatrix(borderFilename)
   end
 
   # Converting csr matrix to csc
-  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
+  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), 
+                        shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
   denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
 
   cscBoundaryMat = sparse(denseMatrix)

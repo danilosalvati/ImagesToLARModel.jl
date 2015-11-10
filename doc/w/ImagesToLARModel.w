@@ -972,14 +972,14 @@ for y in 0:(nx - 1)
 end
 @}
 
-Now we have full cells for the geometry, we can convert it into a full \textit{LAR model}. In particular, we are interested in cell boundaries for every block (as we want to obtain only the boundaries for the final model) so we can call function \texttt{larBoundaryChain} from \texttt{Lar2Julia} module (which will be explained in section~\ref{sec:Lar2Julia}). In Figure~\ref{img:sampleBlocks} there are some examples of models extracted from a single 2x2x2 block.
+Now we have full cells for the geometry, we can convert it into a full \textit{LAR model}. In particular, we are interested in cell boundaries for every block (as we want to obtain only the boundaries for the final model) so we can call function \texttt{larBoundaryChain} from \texttt{Lar2Julia} module (which will be explained in section~\ref{sec:Lar2Julia}). In Figure~\ref{fig:sampleBlocks} there are some examples of models extracted from a single $2 \times 2 \times 2$ block.
 
 \begin{figure}[htb] %  figure placement: here, top, bottom
    \centering
    \includegraphics[width=0.45\linewidth]{images/sampleBlock1.png} \hfill
    \includegraphics[width=0.45\linewidth]{images/sampleBlock2.png}
    \caption{Sample models of 2x2x2 blocks}
-   \label{img:sampleBlocks}
+   \label{fig:sampleBlocks}
 \end{figure}
 
 After model computation, next step is getting vertices and faces from model cells writing results to file. However, as we have already said, we are only interested in boundaries of the final model while now we have only boundaries of a single block. Consequently, we have to separate boundaries from the inner faces of the block on different files (boundaries separation will be explained in section~\ref{sec:LARUtils}). As we can see later, we will merge boundaries together deleting common faces on both block borders, obtaining a model without internal faces. These are pieces of code for getting the inner block model and the boundaries and for file writing:
@@ -1216,7 +1216,8 @@ We have seen that matrix stored in JSON file was in csr matrix as it was returne
   end
 
   # Converting csr matrix to csc
-  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
+  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), 
+			shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
   denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
 
   cscBoundaryMat = sparse(denseMatrix)
@@ -1228,7 +1229,7 @@ end @}
 %===============================================================================
 \section{Lar2Julia}\label{sec:Lar2Julia}
 %===============================================================================
-This module contains function used in LAR library which are converted using Julia syntax. Next versions of the software will contain more and more functions from the original LAR library (which is written in python)
+This module contains functions used in LAR library which are converted using Julia syntax. Next versions of the software will contain more and more functions from the original LAR library (which is written in python)
 
 \subsection{Module imports}\label{sec:Lar2JuliaImports}
 
@@ -1331,11 +1332,302 @@ end @}
 \section{LARUtils}\label{sec:LARUtils}
 %===============================================================================
 
+This module contains functions used for manipulation of LAR models
+
 \subsection{Module imports}\label{sec:LARUtilsImports}
+
+These are modules used in \texttt{LARUtils} and the functions exported
+
+@D modules import LARUtils
+@{using Logging
+
+export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
+    computeModel, computeModelAndBoundaries
+@}
 
 \subsection{Transformation from matrix to array}\label{sec:matrixTransform}
 
-\subsection{get bases of a LAR model}\label{sec:getBases}
+First utility functions we will see, transform a matrix into an array and vice versa. We have already seen in section~\ref{sec:conversionProcess} uses of this linearized matrices; now we can focus on code for transformation.
+
+@D conversion from matrix to array
+@{function ind(x, y, z, nx, ny)
+    """
+    Transform coordinates into linearized matrix indexes
+    """
+    return x + (nx + 1) * (y + (ny + 1) * (z))
+end @}
+
+Here we have defined also the inverse transformation from the array to the matrix, which is useful for obtaining vertices coordinates from a cell
+
+@D conversion from array to matrix
+@{function invertIndex(nx,ny,nz)
+  """
+  Invert indexes
+  """
+  nx, ny, nz = nx + 1, ny + 1, nz + 1
+  function invertIndex0(offset)
+      a0, b0 = trunc(offset / nx), offset % nx
+      a1, b1 = trunc(a0 / ny), a0 % ny
+      a2, b2 = trunc(a1 / nz), a1 % nz
+      return b0, b1, b2
+  end
+  return invertIndex0
+end @}
+
+\subsection{Get bases of a LAR model}\label{sec:getBases}
+
+For generation of LAR models from an array of non-empty cells, we need to define a function for obtaining a base for every model, which will contain all LAR relationships:
+\begin{itemize}
+ \item \textbf{V}: the array of vertices of a LAR model
+ \item \textbf{VV}: the relationship between a vertex and itself
+ \item \textbf{EV}: the relationship between an edge and its vertices
+ \item \textbf{FV}: the relationship between a face and its vertices
+ \item \textbf{CV}: the relationship between a cell and its vertices
+\end{itemize}
+
+From a geometrical point of view these bases create a chain composed from $nx \times ny \times nz$ square cells (where nx ny and nz are the grid size).
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.25\linewidth]{images/larbasis.png}
+   \caption{LAR bases geometry for a $2 \times 2 \times 2$ grid}
+   \label{fig:larbasis}
+\end{figure}
+
+Now we will see in details how to obtain all LAR relationships.\\
+First of all we need to compute vertices for the geometry:
+
+@D compute vertices
+@{# Calculating vertex coordinates (nx * ny * nz)
+V = Array{Int64}[]
+for z in 0:nz
+  for y in 0:ny
+    for x in 0:nx
+      push!(V,[x,y,z])
+    end
+  end
+end @}
+
+So we assume that our cube geometry has only integers coordinates that can vary from (0,0,0) to (nx,ny,nz)
+
+Next we have to compute the CV relationship:
+
+@D compute CV
+@{# Building CV relationship
+CV = Array{Int64}[]
+for z in 0:nz-1
+  for y in 0:ny-1
+    for x in 0:nx-1
+      push!(CV,the3Dcell([x,y,z]))
+    end
+  end
+end @}
+
+For every coordinate in the space delimited by the grid size, it is called function \texttt{the3Dcell}, which get the coordinate values returning a cell in the three-dimensional space:
+
+@D compute three-dimensional cells
+@{function the3Dcell(coords)
+  x,y,z = coords
+  return [ind(x,y,z,nx,ny), ind(x+1,y,z,nx,ny), ind(x,y+1,z,nx,ny),
+	  ind(x,y,z+1,nx,ny), ind(x+1,y+1,z,nx,ny), ind(x+1,y,z+1,nx,ny),
+	  ind(x,y+1,z+1,nx,ny), ind(x+1,y+1,z+1,nx,ny)]
+end
+@}
+
+Now we have to compute the FV relationship, which will be widely used in this package:
+
+@D compute FV
+@{# Building FV relationship
+FV = Array{Int64}[]
+v2coords = invertIndex(nx,ny,nz)
+
+for h in 0:(length(V)-1)
+  x,y,z = v2coords(h)
+
+  if (x < nx) && (y < ny)
+    push!(FV, [h,ind(x+1,y,z,nx,ny),ind(x,y+1,z,nx,ny),ind(x+1,y+1,z,nx,ny)])
+  end
+
+  if (x < nx) && (z < nz)
+    push!(FV, [h,ind(x+1,y,z,nx,ny),ind(x,y,z+1,nx,ny),ind(x+1,y,z+1,nx,ny)])
+  end
+
+  if (y < ny) && (z < nz)
+    push!(FV,[h,ind(x,y+1,z,nx,ny),ind(x,y,z+1,nx,ny),ind(x,y+1,z+1,nx,ny)])
+  end
+
+end @}
+
+Finally we have the VV relationship (which is trivial)
+
+@D compute VV
+@{# Building VV relationship
+VV = map((x)->[x], 0:length(V)-1) @}
+
+and the EV relationship
+
+@D compute EV
+@{# Building EV relationship
+EV = Array{Int64}[]
+for h in 0:length(V)-1
+  x,y,z = v2coords(h)
+  if (x < nx)
+    push!(EV, [h,ind(x+1,y,z,nx,ny)])
+  end
+  if (y < ny)
+    push!(EV, [h,ind(x,y+1,z,nx,ny)])
+  end
+  if (z < nz)
+    push!(EV, [h,ind(x,y,z+1,nx,ny)])
+  end
+end @}
+
+This is the complete code for the function \texttt{getBases}
+@D get LAR bases
+@{function getBases(nx, ny, nz)
+  """
+  Compute all LAR relations
+  """
+
+  @< compute three-dimensional cells @>
+
+  @< compute vertices @>
+
+  @< compute CV @>
+
+  @< compute FV @>
+  
+  @< compute VV @>
+  
+  @< compute EV @>
+
+  # return all basis
+  return V, (VV, EV, FV, CV)
+end @}
+
+\subsection{Double vertices and faces removal}\label{sec:doubleverticesandfacesremoval}
+
+Another useful function for our models is \textit{removal of double vertices and faces}. In fact, when we produce a LAR model getting only full cell from the geometry in Figure~\ref{fig:larbasis} we could obtain double vertices (and consequently double faces). Figure~\ref{fig:duplicates} shows an example of a model with these vertices:
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.25\linewidth]{images/duplicates.png}
+   \caption{A sample model taken from a $2 \times 2 \times 2$ grid with double vertices between faces in red (remember that we have only the boundaries faces for the model as we have seen in section~\ref{sec:conversionProcess})}
+   \label{fig:duplicates}
+\end{figure}
+
+As we can see, for every model there are a lot of double vertices, so we need to remove them for obtaining a compact representation and for next smoothing of the objects. First of all we have to identify double vertices, so it can be useful to define an order between them. Unfortunately Julia does not define a function for order array containing coordinates (which is format used in \textit{V} array); so we have to define first a custom ordering function:
+
+@D vertices comparator function
+@{function lessThanVertices(v1, v2)
+  """
+  Utility function for comparing vertices coordinates
+  """
+
+  if v1[1] == v2[1]
+    if v1[2] == v2[2]
+      return v1[3] < v2[3]
+    end
+    return v1[2] < v2[2]
+  end
+  return v1[1] < v2[1]
+end @}
+
+Now we can remove double vertices from the \textit{V} array simply ordering them and removing all consecutive equal vertices. This procedure is more complex than a simple call to Julia \texttt{unique} function for removal of double elements because we need the new vertices indices for renaming faces (as we can see later)
+
+@D removal of double vertices
+@{function removeDoubleVertices(V)
+  """
+  Remove double vertices from a LAR model
+
+  V: Array containing all vertices of the model
+  """
+
+  # Sort the vertices list and returns the ordered indices
+  orderedIndices = sortperm(V, lt = lessThanVertices, alg=MergeSort)
+
+  orderedVerticesAndIndices = collect(zip(sort(V, lt = lessThanVertices),
+                                          orderedIndices))
+  newVertices = Array(Array{Int}, 0)
+  indices = zeros(Int, length(V))
+  prevv = Nothing
+  i = 1
+  for (v, ind) in orderedVerticesAndIndices
+    if v == prevv
+      indices[ind] = i - 1
+    else
+      push!(newVertices, v)
+      indices[ind] = i
+      i += 1
+      prevv = v
+    end
+  end
+  return newVertices, indices
+end @}
+
+As we can see the algorithm does the following steps:
+\begin{enumerate}
+ \item Sort of vertices list
+ \item Set the current vertex index counter to 1
+ \item For every couple (\textit{vertex}, \textit{index} into V array) do:
+ \begin{enumerate}
+  \item If the current \textit{vertex} is equal to the previous one put into the indices array at position \textit{index} the value for the current vertex index count
+  \item If the current \textit{vertex} is not equal to the previous one save it into a new V array, insert the indices array at position \textit{index} the current index count and increment it by one
+ \end{enumerate}
+\end{enumerate}
+
+So at the end of this function the array \textit{newVertices} will contain all unique vertices, while the \textit{indices} array will contain the correct index for every vertex into \textit{newVertices} and the index corresponding to the saved vertex for every deleted vertex.\\
+
+Now we can use these informations for renaming all faces.
+
+@D renaming of faces
+@{function reindexVerticesInFaces(FV, indices, offset)
+  """
+  Reindex vertices indices in faces array
+
+  FV: Faces array of the LAR model
+  indices: new Indices for faces
+  offset: offset for faces indices
+  """
+
+  for f in FV
+    for i in 1: length(f)
+      f[i] = indices[f[i] - offset] + offset
+    end
+  end
+  return FV
+end @}
+
+Here we can observe a \textit{offset} parameter, which is necessary only if we are renaming faces whose indices doesn't start from zero; actually in \texttt{ImagesToLARModel} it is always equal to zero.\\
+
+Finally for removing double faces, we only have to call \texttt{unique} function on renamed faces. This is the final code
+
+@D removal of double vertices and faces
+@{@< vertices comparator function @>
+
+function removeDoubleVerticesAndFaces(V, FV, facesOffset)
+  """
+  Removes double vertices and faces from a LAR model
+
+  V: Array containing all vertices
+  FV: Array containing all faces
+  facesOffset: offset for faces indices
+  """
+
+  newV, indices = removeDoubleVertices(V)
+  reindexedFaces = reindexVerticesInFaces(FV, indices, facesOffset)
+  newFV = unique(FV)
+
+  return newV, newFV
+
+end
+
+@< removal of double vertices @>
+
+@< renaming of faces @> @}
+
+\subsection{Creation of a LAR model}\label{sec:modelCreation}
+\subsection{Removing double faces and vertices from boundaries}\label{sec:removeDoubleFacesAndVerticesFromBoundaries}
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================
@@ -1410,106 +1702,13 @@ end
 @O src/LARUtils.jl
 @{module LARUtils
 
-using Logging
+@< modules import LARUtils @>
 
-export ind, invertIndex, getBases, removeDoubleVerticesAndFaces, computeModel, computeModelAndBoundaries
+@< conversion from matrix to array @>
 
-function ind(x, y, z, nx, ny)
-    """
-    Transform coordinates into linearized matrix indexes
-    """
-    return x + (nx + 1) * (y + (ny + 1) * (z))
-  end
+@< conversion from array to matrix @>
 
-
-function invertIndex(nx,ny,nz)
-  """
-  Invert indexes
-  """
-  nx, ny, nz = nx + 1, ny + 1, nz + 1
-  function invertIndex0(offset)
-      a0, b0 = trunc(offset / nx), offset % nx
-      a1, b1 = trunc(a0 / ny), a0 % ny
-      a2, b2 = trunc(a1 / nz), a1 % nz
-      return b0, b1, b2
-  end
-  return invertIndex0
-end
-
-
-function getBases(nx, ny, nz)
-  """
-  Compute all LAR relations
-  """
-
-  function the3Dcell(coords)
-    x,y,z = coords
-    return [ind(x,y,z,nx,ny),ind(x+1,y,z,nx,ny),ind(x,y+1,z,nx,ny),ind(x,y,z+1,nx,ny),ind(x+1,y+1,z,nx,ny),
-            ind(x+1,y,z+1,nx,ny),ind(x,y+1,z+1,nx,ny),ind(x+1,y+1,z+1,nx,ny)]
-  end
-
-  # Calculating vertex coordinates (nx * ny * nz)
-  V = Array{Int64}[]
-  for z in 0:nz
-    for y in 0:ny
-      for x in 0:nx
-        push!(V,[x,y,z])
-      end
-    end
-  end
-
-  # Building CV relationship
-  CV = Array{Int64}[]
-  for z in 0:nz-1
-    for y in 0:ny-1
-      for x in 0:nx-1
-        push!(CV,the3Dcell([x,y,z]))
-      end
-    end
-  end
-
-  # Building FV relationship
-  FV = Array{Int64}[]
-  v2coords = invertIndex(nx,ny,nz)
-
-  for h in 0:(length(V)-1)
-    x,y,z = v2coords(h)
-
-    if (x < nx) && (y < ny)
-      push!(FV, [h,ind(x+1,y,z,nx,ny),ind(x,y+1,z,nx,ny),ind(x+1,y+1,z,nx,ny)])
-    end
-
-    if (x < nx) && (z < nz)
-      push!(FV, [h,ind(x+1,y,z,nx,ny),ind(x,y,z+1,nx,ny),ind(x+1,y,z+1,nx,ny)])
-    end
-
-    if (y < ny) && (z < nz)
-      push!(FV,[h,ind(x,y+1,z,nx,ny),ind(x,y,z+1,nx,ny),ind(x,y+1,z+1,nx,ny)])
-    end
-
-  end
-
-  # Building VV relationship
-  VV = map((x)->[x], 0:length(V)-1)
-
-  # Building EV relationship
-  EV = Array{Int64}[]
-  for h in 0:length(V)-1
-    x,y,z = v2coords(h)
-    if (x < nx)
-      push!(EV, [h,ind(x+1,y,z,nx,ny)])
-    end
-    if (y < ny)
-      push!(EV, [h,ind(x,y+1,z,nx,ny)])
-    end
-    if (z < nz)
-      push!(EV, [h,ind(x,y,z+1,nx,ny)])
-    end
-  end
-
-  # return all basis
-  return V, (VV, EV, FV, CV)
-end
+@< get LAR bases @>
 
 function lessThanVertices(v1, v2)
   """

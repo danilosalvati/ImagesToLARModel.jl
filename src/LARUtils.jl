@@ -2,15 +2,16 @@ module LARUtils
 
 using Logging
 
-export ind, invertIndex, getBases, removeDoubleVerticesAndFaces, computeModel, computeModelAndBoundaries
+export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
+    computeModel, computeModelAndBoundaries
+
 
 function ind(x, y, z, nx, ny)
     """
     Transform coordinates into linearized matrix indexes
     """
     return x + (nx + 1) * (y + (ny + 1) * (z))
-  end
-
+end 
 
 function invertIndex(nx,ny,nz)
   """
@@ -24,8 +25,7 @@ function invertIndex(nx,ny,nz)
       return b0, b1, b2
   end
   return invertIndex0
-end
-
+end 
 
 function getBases(nx, ny, nz)
   """
@@ -34,9 +34,11 @@ function getBases(nx, ny, nz)
 
   function the3Dcell(coords)
     x,y,z = coords
-    return [ind(x,y,z,nx,ny),ind(x+1,y,z,nx,ny),ind(x,y+1,z,nx,ny),ind(x,y,z+1,nx,ny),ind(x+1,y+1,z,nx,ny),
-            ind(x+1,y,z+1,nx,ny),ind(x,y+1,z+1,nx,ny),ind(x+1,y+1,z+1,nx,ny)]
+    return [ind(x,y,z,nx,ny), ind(x+1,y,z,nx,ny), ind(x,y+1,z,nx,ny),
+            ind(x,y,z+1,nx,ny), ind(x+1,y+1,z,nx,ny), ind(x+1,y,z+1,nx,ny),
+            ind(x,y+1,z+1,nx,ny), ind(x+1,y+1,z+1,nx,ny)]
   end
+  
 
   # Calculating vertex coordinates (nx * ny * nz)
   V = Array{Int64}[]
@@ -46,7 +48,7 @@ function getBases(nx, ny, nz)
         push!(V,[x,y,z])
       end
     end
-  end
+  end 
 
   # Building CV relationship
   CV = Array{Int64}[]
@@ -56,7 +58,7 @@ function getBases(nx, ny, nz)
         push!(CV,the3Dcell([x,y,z]))
       end
     end
-  end
+  end 
 
   # Building FV relationship
   FV = Array{Int64}[]
@@ -77,11 +79,11 @@ function getBases(nx, ny, nz)
       push!(FV,[h,ind(x,y+1,z,nx,ny),ind(x,y,z+1,nx,ny),ind(x,y+1,z+1,nx,ny)])
     end
 
-  end
-
+  end 
+  
   # Building VV relationship
-  VV = map((x)->[x], 0:length(V)-1)
-
+  VV = map((x)->[x], 0:length(V)-1) 
+  
   # Building EV relationship
   EV = Array{Int64}[]
   for h in 0:length(V)-1
@@ -95,11 +97,11 @@ function getBases(nx, ny, nz)
     if (z < nz)
       push!(EV, [h,ind(x,y,z+1,nx,ny)])
     end
-  end
+  end 
 
   # return all basis
   return V, (VV, EV, FV, CV)
-end
+end 
 
 function lessThanVertices(v1, v2)
   """
