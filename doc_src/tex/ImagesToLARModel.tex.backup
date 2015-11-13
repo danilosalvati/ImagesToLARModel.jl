@@ -1566,10 +1566,41 @@ Now we can remove double vertices from the \textit{V} array simply ordering them
 end @}
 
 As we can see the algorithm does the following steps:
-\begin{itemize}
- \item 
-\end{itemize}
+\begin{enumerate}
+ \item Sort of vertices list
+ \item Set the current vertex index counter to 1
+ \item For every couple (\textit{vertex}, \textit{index} into V array) do:
+ \begin{enumerate}
+  \item If the current \textit{vertex} is equal to the previous one put into the indices array at position \textit{index} the value for the current vertex index count
+  \item If the current \textit{vertex} is not equal to the previous one save it into a new V array, insert the indices array at position \textit{index} the current index count and increment it by one
+ \end{enumerate}
+\end{enumerate}
 
+So at the end of this function the array \textit{newVertices} will contain all unique vertices, while the \textit{indices} array will contain the correct index for every vertex into \textit{newVertices} and the index corresponding to the saved vertex for every deleted vertex.\\
+
+Now we can use these informations for renaming all faces.
+
+@D renaming of faces
+@{function reindexVerticesInFaces(FV, indices, offset)
+  """
+  Reindex vertices indices in faces array
+
+  FV: Faces array of the LAR model
+  indices: new Indices for faces
+  offset: offset for faces indices
+  """
+
+  for f in FV
+    for i in 1: length(f)
+      f[i] = indices[f[i] - offset] + offset
+    end
+  end
+  return FV
+end @}
+
+Here we can observe a \textit{offset} parameter, which is necessary only if we are renaming faces whose indices doesn't start from zero; actually in \texttt{ImagesToLARModel} it is always equal to zero.\\
+
+Finally for removing double faces, we only have to call \texttt{unique} function on renamed faces. This is the final code
 
 @D removal of double vertices and faces
 @{@< vertices comparator function @>
@@ -1593,23 +1624,291 @@ end
 
 @< removal of double vertices @>
 
-function reindexVerticesInFaces(FV, indices, offset)
-  """
-  Reindex vertices indices in faces array
+@< renaming of faces @> @}
 
-  FV: Faces array of the LAR model
-  indices: new Indices for faces
-  offset: offset for faces indices
+\subsection{Creation of a LAR model}\label{sec:modelCreation}
+
+Now we can see code used for creation of a LAR model given the sparse array containing full cells of our block (\textbf{objectBoundaryChain} as we had seen in Section~\ref{sec:boundaryChain}). We also need the following parameters:
+\begin{itemize}
+ \item \textbf{imageDx}, \textbf{imageDy}, \textbf{imageDz}: The grid size
+ \item \textbf{xStart}, \textbf{yStart}, \textbf{zStart}: The coordinate offsets for the current block vertices
+ \item \textbf{facesOffset}: The offset for faces of this block
+\end{itemize}
+
+First thing to do is define models that will be returned from the function:
+
+@D models definition
+@{V_model = Array(Array{Int}, 0)
+FV_model = Array(Array{Int}, 0)
+
+V_left = Array(Array{Int},0)
+FV_left = Array(Array{Int},0)
+
+V_right = Array(Array{Int},0)
+FV_right = Array(Array{Int},0)
+
+V_top = Array(Array{Int},0)
+FV_top = Array(Array{Int},0)
+
+V_bottom = Array(Array{Int},0)
+FV_bottom = Array(Array{Int},0)
+
+V_front = Array(Array{Int},0)
+FV_front = Array(Array{Int},0)
+
+V_back = Array(Array{Int},0)
+FV_back = Array(Array{Int},0) @}
+
+We can see from Figure~\ref{fig:boundaries} that our grid is divided into seven parts.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.25\linewidth]{images/boundaries.png}
+   \caption{Decomposition of a LAR model into seven parts: the inside model (brown), the left boundary (green), the right boundary (light blue), the top boundary (purple), the bottom boundary (light green), the front boundary(blue), the back boundary (red)}
+   \label{fig:boundaries}
+\end{figure}
+
+We need this decomposition because we are interested in boundaries of the entire model, while we currently have boundaries only for blocks. So we need to split the inner parts of a single block model, as we need to freely merge boundaries between adjacent blocks removing the common faces. Function for boundaries merging are shown in subsection~\ref{sec:removeDoubleFacesAndVerticesFromBoundaries}.\\
+
+After model definition we have to get the cells indices from the block boundary chain and for every non-empty cell we have found, choose the correct model for it. We can observe that every boundary face has a fixed coordinate; for example all faces on the top boundary have the maximum z-coordinate, or faces on right boundary have the maximum y-coordinate (as shown in Figure~\ref{fig:boundariesCoordinates})
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.90\linewidth]{images/boundariesCoordinates.png}
+   \caption{Boundaries coordinates for top and right boundaries of a $2 \times 2 \times 2$ grid. We can observe that every boundary has a fixed coordinate}
+   \label{fig:boundariesCoordinates}
+\end{figure}
+
+So we can define a series of functions for checking the membership of a given face to a boundary exploiting these fixed coordinates:
+
+@D check membership of a face to a boundary
+@{function isOnLeft(face, V, nx, ny, nz)
+  """
+  Check if face is on left boundary
   """
 
-  for f in FV
-    for i in 1: length(f)
-      f[i] = indices[f[i] - offset] + offset
+  for(vtx in face)
+    if(V[vtx + 1][2] != 0)
+      return false
     end
   end
-  return FV
+  return true
+
+end
+
+function isOnRight(face, V, nx, ny, nz)
+  """
+  Check if face is on right boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][2] != ny)
+      return false
+    end
+  end
+  return true
+
+end
+
+function isOnTop(face, V, nx, ny, nz)
+  """
+  Check if face is on top boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][3] != nz)
+      return false
+    end
+  end
+  return true
+end
+
+function isOnBottom(face, V, nx, ny, nz)
+  """
+  Check if face is on bottom boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][3] != 0)
+      return false
+    end
+  end
+  return true
+end
+
+function isOnFront(face, V, nx, ny, nz)
+  """
+  Check if face is on front boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][1] != nx)
+      return false
+    end
+  end
+  return true
+end
+
+function isOnBack(face, V, nx, ny, nz)
+  """
+  Check if face is on back boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][1] != 0)
+      return false
+    end
+  end
+  return true
 end @}
 
+After choosing of the right model, we have to insert our face into it. We can do it with the following function, which takes vertices and faces of the base and the model, the face, and the offset of the current face for the model chosen:
+
+@D add a face to a model
+@{function addFaceToModel(V_base, FV_base, V, FV, face, vertex_count)
+  """
+  Insert a face into a LAR model
+
+  V_base, FV_base: LAR model of the base
+  V, FV: LAR model
+  face: Face that will be added to the model
+  vertex_count: Indices for faces vertices
+  """
+  new_vertex_count = vertex_count
+  for vtx in FV_base[face]
+    push!(V, [convert(Int, V_base[vtx + 1][1] + xStart),
+		    convert(Int, V_base[vtx + 1][2] + yStart),
+		    convert(Int, V_base[vtx + 1][3] + zStart)])
+    new_vertex_count += 1
+  end
+  push!(FV, [vertex_count, vertex_count + 1, vertex_count + 3])
+  push!(FV, [vertex_count, vertex_count + 3, vertex_count + 2])
+
+  return new_vertex_count
+end @}
+
+As we can see, for every face we put into the model FV array two faces, in fact our final representation is not based on square faces but on triangular faces.
+
+@D LAR model creation
+@{@< check membership of a face to a boundary @>
+
+function computeModelAndBoundaries(imageDx, imageDy, imageDz,
+                      xStart, yStart, zStart,
+                      objectBoundaryChain)
+  """
+  Takes the boundary chain of a part of the entire model
+  and returns a LAR model splitting the boundaries
+
+  imageDx, imageDy, imageDz: Boundary dimensions
+  xStart, yStart, zStart: Offset of this part of the model
+  objectBoundaryChain: Sparse csc matrix containing the cells
+  """
+
+  @< add a face to a model @>
+  
+  @< models definition @>
+
+  V, bases = getBases(imageDx, imageDy, imageDz)
+  FV = bases[3]
+
+  vertex_count_model = 1
+  vertex_count_left = 1
+  vertex_count_right = 1
+  vertex_count_top = 1
+  vertex_count_bottom = 1
+  vertex_count_front = 1
+  vertex_count_back = 1
+
+  #b2cells = Lar2Julia.cscChainToCellList(objectBoundaryChain)
+  # Get all cells (independently from orientation)
+  b2cells = findn(objectBoundaryChain)[1]
+
+  debug("b2cells = ", b2cells)
+
+  for f in b2cells
+    old_vertex_count_model = vertex_count_model
+    old_vertex_count_left = vertex_count_left
+    old_vertex_count_right = vertex_count_right
+    old_vertex_count_top = vertex_count_top
+    old_vertex_count_bottom = vertex_count_bottom
+    old_vertex_count_front = vertex_count_front
+    old_vertex_count_back = vertex_count_back
+
+    # Choosing the right model for vertex
+    if(isOnLeft(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_left = addFaceToModel(V, FV, V_left, FV_left, f, old_vertex_count_left)
+    elseif(isOnRight(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_right = addFaceToModel(V, FV, V_right, FV_right, f, old_vertex_count_right)
+    elseif(isOnTop(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_top = addFaceToModel(V, FV, V_top, FV_top, f, old_vertex_count_top)
+    elseif(isOnBottom(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_bottom = addFaceToModel(V, FV, V_bottom, FV_bottom, f, old_vertex_count_bottom)
+    elseif(isOnFront(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_front = addFaceToModel(V, FV, V_front, FV_front, f, old_vertex_count_front)
+    elseif(isOnBack(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_back = addFaceToModel(V, FV, V_back, FV_back, f, old_vertex_count_back)
+    else
+      vertex_count_model = addFaceToModel(V, FV, V_model, FV_model, f, old_vertex_count_model)
+    end
+
+  end
+
+  # Removing double vertices
+  return [removeDoubleVerticesAndFaces(V_model, FV_model, 0)],
+  [removeDoubleVerticesAndFaces(V_left, FV_left, 0)],
+  [removeDoubleVerticesAndFaces(V_right, FV_right, 0)],
+  [removeDoubleVerticesAndFaces(V_top, FV_top, 0)],
+  [removeDoubleVerticesAndFaces(V_bottom, FV_bottom, 0)],
+  [removeDoubleVerticesAndFaces(V_front, FV_front, 0)],
+  [removeDoubleVerticesAndFaces(V_back, FV_back, 0)]
+end 
+
+function computeModel(imageDx, imageDy, imageDz,
+                      xStart, yStart, zStart,
+                      facesOffset, objectBoundaryChain)
+  """
+  Takes the boundary chain of a part of the entire model
+  and returns a LAR model
+
+  imageDx, imageDy, imageDz: Boundary dimensions
+  xStart, yStart, zStart: Offset of this part of the model
+  facesOffset: Offset for the faces
+  objectBoundaryChain: Sparse csc matrix containing the cells
+  """
+
+  V, bases = getBases(imageDx, imageDy, imageDz)
+  FV = bases[3]
+
+  V_model = Array(Array{Int}, 0)
+  FV_model = Array(Array{Int}, 0)
+
+  vertex_count = 1
+
+  #b2cells = Lar2Julia.cscChainToCellList(objectBoundaryChain)
+  # Get all cells (independently from orientation)
+  b2cells = findn(objectBoundaryChain)[1]
+
+  debug("b2cells = ", b2cells)
+
+  for f in b2cells
+    old_vertex_count = vertex_count
+    for vtx in FV[f]
+      push!(V_model, [convert(Int, V[vtx + 1][1] + xStart),
+                    convert(Int, V[vtx + 1][2] + yStart),
+                    convert(Int, V[vtx + 1][3] + zStart)])
+      vertex_count += 1
+    end
+
+    push!(FV_model, [old_vertex_count + facesOffset, old_vertex_count + 1 + facesOffset, old_vertex_count + 3 + facesOffset])
+    push!(FV_model, [old_vertex_count + facesOffset, old_vertex_count + 3 + facesOffset, old_vertex_count + 2 + facesOffset])
+  end
+
+  # Removing double vertices
+  return removeDoubleVerticesAndFaces(V_model, FV_model, facesOffset)
+
+end @}
+
+\subsection{Removing double faces and vertices from boundaries}\label{sec:removeDoubleFacesAndVerticesFromBoundaries}
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================

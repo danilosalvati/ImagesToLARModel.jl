@@ -113,6 +113,11 @@ function startImageConversion(sliceDirectory, bestImage, outputDirectory, border
                             imageHeight, imageWidth, imageDepth,
                             imageDx, imageDy, imageDz)
 
+  info("Merging blocks")
+  Model2Obj.mergeBlocks(string(outputDirectory, "MODELS"),
+                            imageHeight, imageWidth, imageDepth,
+                            imageDx, imageDy, imageDz)
+
   info("Merging obj models")
   if parallelMerge
     Model2Obj.mergeObjParallel(string(outputDirectory, "MODELS"))

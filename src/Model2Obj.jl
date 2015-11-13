@@ -52,9 +52,9 @@ function mergeObj(modelDirectory)
   """
 
   files = readdir(modelDirectory)
-  vertices_files = files[find(s -> contains(s,string("_vtx.stl")), files)]
-  faces_files = files[find(s -> contains(s,string("_faces.stl")), files)]
-  obj_file = open(string(modelDirectory,"/","model.obj"),"w") # Output file
+  vertices_files = files[find(s -> contains(s, string("_vtx.stl")), files)]
+  faces_files = files[find(s -> contains(s, string("_faces.stl")), files)]
+  obj_file = open(string(modelDirectory, "/", "model.obj"), "w") # Output file
 
   vertices_counts = Array(Int64, length(vertices_files))
   number_of_vertices = 0
@@ -306,7 +306,42 @@ function mergeObjParallel(modelDirectory)
 
 end
 
-function mergeAndRemoveDuplicates(firstPath, secondPath)
+function getModelsFromFiles(arrayV, arrayFV)
+  """
+  Get a LAR models for two arrays of vertices
+  and faces files
+
+  arrayV: Array containing all vertices files
+  arrayFV: Array containing all faces files
+  """
+
+  V = Array(Array{Int}, 0)
+  FV = Array(Array{Int}, 0)
+  offset = 0
+
+  for i in 1:length(arrayV)
+    if isfile(arrayFV[i])
+      f_FV = open(arrayFV[i])
+
+      for ln in eachline(f_FV)
+        splitted = split(ln)
+        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
+      end
+      close(f_FV)
+
+      f_V = open(arrayV[i])
+      for ln in eachline(f_V)
+        splitted = split(ln)
+        push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+        offset += 1
+      end
+      close(f_V)
+    end
+  end
+  return LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
+end
+
+function mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
   """
   Merge two boundary files removing common faces between
   them
@@ -322,54 +357,63 @@ function mergeAndRemoveDuplicates(firstPath, secondPath)
 
   if(isfile(firstPathV) && isfile(secondPathV))
 
-    V = Array(Array{Int}, 0)
-    FV = Array(Array{Int}, 0)
-
-    offset = 0
-
-    # First of all open files and retrieve LAR models
-
-    f1_V = open(firstPathV)
-    f1_FV = open(firstPathFV)
-
-    for ln in eachline(f1_V)
-      splitted = split(ln)
-      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
-      offset += 1
-    end
-
-    for ln in eachline(f1_FV)
-      splitted = split(ln)
-      push!(FV, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
-    end
-
-    close(f1_V)
-    close(f1_FV)
-
-    f2_V = open(secondPathV)
-    f2_FV = open(secondPathFV)
-
-    for ln in eachline(f2_V)
-      splitted = split(ln)
-      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
-    end
-
-    for ln in eachline(f2_FV)
-      splitted = split(ln)
-      push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
-    end
-
-    close(f2_V)
-    close(f2_FV)
-
-    V_final, FV_final = LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
+    V, FV = getModelsFromFiles([firstPathV, secondPathV], [firstPathFV, secondPathFV])
 
     # Writing model to file
     rm(firstPathV)
     rm(firstPathFV)
     rm(secondPathV)
     rm(secondPathFV)
-    writeToObj(V_final, FV_final, firstPath)
+    writeToObj(V, FV, firstPath)
+  end
+end
+
+function mergeBlocksProcess(modelDirectory, startImage, endImage,
+                            imageDx, imageDy,
+                            imageWidth, imageHeight)
+  """
+  Helper function for mergeBlocks.
+  It is executed on different processes
+
+  modelDirectory: Directory containing model files
+  startImage: Block start image
+  endImage: Block end image
+  imageDx, imageDy: x and y sizes of the grid
+  imageWidth, imageHeight: Width and Height of the image
+  """
+  for xBlock in 0:(imageHeight / imageDx - 1)
+    for yBlock in 0:(imageWidth / imageDy - 1)
+
+      blockCoordsV = string(xBlock, "-", yBlock, "_", startImage, "_", endImage, "_vtx.stl")
+      blockCoordsFV = string(xBlock, "-", yBlock, "_", startImage, "_", endImage, "_faces.stl")
+
+      arrayV = [string(modelDirectory, "/left_output_",blockCoordsV),
+                string(modelDirectory, "/right_output_",blockCoordsV),
+                string(modelDirectory, "/top_output_",blockCoordsV),
+                string(modelDirectory, "/bottom_output_",blockCoordsV),
+                string(modelDirectory, "/front_output_",blockCoordsV),
+                string(modelDirectory, "/back_output_",blockCoordsV),
+                string(modelDirectory, "/model_output_",blockCoordsV)]
+
+      arrayFV = [string(modelDirectory, "/left_output_",blockCoordsFV),
+                 string(modelDirectory, "/right_output_",blockCoordsFV),
+                 string(modelDirectory, "/top_output_",blockCoordsFV),
+                 string(modelDirectory, "/bottom_output_",blockCoordsFV),
+                 string(modelDirectory, "/front_output_",blockCoordsFV),
+                 string(modelDirectory, "/back_output_",blockCoordsFV),
+                 string(modelDirectory, "/model_output_",blockCoordsFV)]
+
+      V, FV = getModelsFromFiles(arrayV, arrayFV)
+      for i in 1:length(arrayV)
+        if(isfile(arrayV[i]))
+          rm(arrayV[i])
+          rm(arrayFV[i])
+        end
+      end
+      writeToObj(V, FV, string(modelDirectory, "/model_output_",
+                               xBlock, "-", yBlock, "_", startImage, "_", endImage))
+
+    end
   end
 end
 
@@ -379,9 +423,9 @@ function mergeBoundariesProcess(modelDirectory, startImage, endImage,
   """
   Helper function for mergeBoundaries.
   It is executed on different processes
-  
+
   modelDirectory: Directory containing model files
-  startImage: Block start image 
+  startImage: Block start image
   endImage: Block end image
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
@@ -392,17 +436,17 @@ function mergeBoundariesProcess(modelDirectory, startImage, endImage,
       # Merging right Boundary
       firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
       secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1, "_", startImage, "_", endImage)
-      mergeAndRemoveDuplicates(firstPath, secondPath)
+      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 
       # Merging top boundary
       firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
       secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
-      mergeAndRemoveDuplicates(firstPath, secondPath)
+      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 
       # Merging front boundary
       firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
       secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
-      mergeAndRemoveDuplicates(firstPath, secondPath)
+      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
     end
   end
 end
@@ -430,8 +474,39 @@ function mergeBoundaries(modelDirectory,
     startImage = endImage
     endImage = startImage + imageDz
     task = @spawn mergeBoundariesProcess(modelDirectory, startImage, endImage,
-                           imageDx, imageDy,
-                           imageWidth, imageHeight)
+                                         imageDx, imageDy,
+                                         imageWidth, imageHeight)
+    push!(tasks, task)
+  end
+
+  # Waiting for tasks
+  for task in tasks
+    wait(task)
+  end
+end
+
+function mergeBlocks(modelDirectory,
+                     imageHeight, imageWidth, imageDepth,
+                     imageDx, imageDy, imageDz)
+  """
+  Merge block taking the models and the corresponding boundaries.
+  For every merged block double faces and vertices are removed.
+
+  modelDirectory: directory containing models
+  imageHeight, imageWidth, imageDepth: images sizes
+  imageDx, imageDy, imageDz: sizes of cells grid
+  """
+
+  beginImageStack = 0
+  endImage = beginImageStack
+
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 0:(imageDepth / imageDz - 1)
+    startImage = endImage
+    endImage = startImage + imageDz
+    task = @spawn mergeBlocksProcess(modelDirectory, startImage, endImage,
+                                     imageDx, imageDy,
+                                     imageWidth, imageHeight)
     push!(tasks, task)
   end
 

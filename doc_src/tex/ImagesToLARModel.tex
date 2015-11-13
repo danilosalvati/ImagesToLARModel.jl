@@ -836,12 +836,17 @@ for zBlock in 0:(imageDepth / imageDz - 1)
 end
 @}
 
-All processes produce a lot of files containing three-dimensional models of a block, so after their termination, we should merge the boundaries between blocks (see later for a better explanation) and merge all model files as we can see in this piece of code:
+All processes produce a lot of files containing three-dimensional models of a block, so after their termination, we should merge the boundaries between blocks (see later for a better explanation), the remaining boundaries with their block and all resulting model files as we can see in this piece of code:
 
 @D final file merge
 @{info("Merging boundaries")
 # Merge Boundaries files
 Model2Obj.mergeBoundaries(string(outputDirectory, "MODELS"),
+			  imageHeight, imageWidth, imageDepth,
+			  imageDx, imageDy, imageDz)
+
+info("Merging blocks")
+Model2Obj.mergeBlocks(string(outputDirectory, "MODELS"),
 			  imageHeight, imageWidth, imageDepth,
 			  imageDx, imageDy, imageDz)
 
@@ -1627,6 +1632,267 @@ end
 @< renaming of faces @> @}
 
 \subsection{Creation of a LAR model}\label{sec:modelCreation}
+
+Now we can see code used for creation of a LAR model given the sparse array containing full cells of our block (\textbf{objectBoundaryChain} as we had seen in Section~\ref{sec:boundaryChain}). We also need the following parameters:
+\begin{itemize}
+ \item \textbf{imageDx}, \textbf{imageDy}, \textbf{imageDz}: The grid size
+ \item \textbf{xStart}, \textbf{yStart}, \textbf{zStart}: The coordinate offsets for the current block vertices
+ \item \textbf{facesOffset}: The offset for faces of this block
+\end{itemize}
+
+First thing to do is define models that will be returned from the function:
+
+@D models definition
+@{V_model = Array(Array{Int}, 0)
+FV_model = Array(Array{Int}, 0)
+
+V_left = Array(Array{Int},0)
+FV_left = Array(Array{Int},0)
+
+V_right = Array(Array{Int},0)
+FV_right = Array(Array{Int},0)
+
+V_top = Array(Array{Int},0)
+FV_top = Array(Array{Int},0)
+
+V_bottom = Array(Array{Int},0)
+FV_bottom = Array(Array{Int},0)
+
+V_front = Array(Array{Int},0)
+FV_front = Array(Array{Int},0)
+
+V_back = Array(Array{Int},0)
+FV_back = Array(Array{Int},0) @}
+
+We can see from Figure~\ref{fig:boundaries} that our grid is divided into seven parts.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.25\linewidth]{images/boundaries.png}
+   \caption{Decomposition of a LAR model into seven parts: the inside model (brown), the left boundary (green), the right boundary (light blue), the top boundary (purple), the bottom boundary (light green), the front boundary(blue), the back boundary (red)}
+   \label{fig:boundaries}
+\end{figure}
+
+We need this decomposition because we are interested in boundaries of the entire model, while we currently have boundaries only for blocks. So we need to split the inner parts of a single block model, as we need to freely merge boundaries between adjacent blocks removing the common faces. Function for boundaries merging are shown in subsection~\ref{sec:removeDoubleFacesAndVerticesFromBoundaries}.\\
+
+After model definition we have to get the cells indices from the block boundary chain and for every non-empty cell we have found, choose the correct model for it. We can observe that every boundary face has a fixed coordinate; for example all faces on the top boundary have the maximum z-coordinate, or faces on right boundary have the maximum y-coordinate (as shown in Figure~\ref{fig:boundariesCoordinates})
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.90\linewidth]{images/boundariesCoordinates.png}
+   \caption{Boundaries coordinates for top and right boundaries of a $2 \times 2 \times 2$ grid. We can observe that every boundary has a fixed coordinate}
+   \label{fig:boundariesCoordinates}
+\end{figure}
+
+So we can define a series of functions for checking the membership of a given face to a boundary exploiting these fixed coordinates:
+
+@D check membership of a face to a boundary
+@{function isOnLeft(face, V, nx, ny, nz)
+  """
+  Check if face is on left boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][2] != 0)
+      return false
+    end
+  end
+  return true
+
+end
+
+function isOnRight(face, V, nx, ny, nz)
+  """
+  Check if face is on right boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][2] != ny)
+      return false
+    end
+  end
+  return true
+
+end
+
+function isOnTop(face, V, nx, ny, nz)
+  """
+  Check if face is on top boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][3] != nz)
+      return false
+    end
+  end
+  return true
+end
+
+function isOnBottom(face, V, nx, ny, nz)
+  """
+  Check if face is on bottom boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][3] != 0)
+      return false
+    end
+  end
+  return true
+end
+
+function isOnFront(face, V, nx, ny, nz)
+  """
+  Check if face is on front boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][1] != nx)
+      return false
+    end
+  end
+  return true
+end
+
+function isOnBack(face, V, nx, ny, nz)
+  """
+  Check if face is on back boundary
+  """
+
+  for(vtx in face)
+    if(V[vtx + 1][1] != 0)
+      return false
+    end
+  end
+  return true
+end @}
+
+After choosing of the right model, we have to insert our face into it. We can do it with the following function, which takes vertices and faces of the base and the model, the face, and the offset of the current face for the model chosen:
+
+@D add a face to a model
+@{function addFaceToModel(V_base, FV_base, V, FV, face, vertex_count)
+  """
+  Insert a face into a LAR model
+
+  V_base, FV_base: LAR model of the base
+  V, FV: LAR model
+  face: Face that will be added to the model
+  vertex_count: Indices for faces vertices
+  """
+  new_vertex_count = vertex_count
+  for vtx in FV_base[face]
+    push!(V, [convert(Int, V_base[vtx + 1][1] + xStart),
+		    convert(Int, V_base[vtx + 1][2] + yStart),
+		    convert(Int, V_base[vtx + 1][3] + zStart)])
+    new_vertex_count += 1
+  end
+  push!(FV, [vertex_count, vertex_count + 1, vertex_count + 3])
+  push!(FV, [vertex_count, vertex_count + 3, vertex_count + 2])
+
+  return new_vertex_count
+end @}
+
+As we can see, for every face we put into the model FV array two faces, in fact our final representation is not based on square faces but on triangular faces.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/Triangulation.png}
+   \caption{Triangulation of a single face}
+   \label{fig:Triangulation}
+\end{figure}
+
+This is the complete code for creation of a model
+
+@D LAR model creation
+@{@< check membership of a face to a boundary @>
+
+function computeModelAndBoundaries(imageDx, imageDy, imageDz,
+                      xStart, yStart, zStart,
+                      objectBoundaryChain)
+  """
+  Takes the boundary chain of a part of the entire model
+  and returns a LAR model splitting the boundaries
+
+  imageDx, imageDy, imageDz: Boundary dimensions
+  xStart, yStart, zStart: Offset of this part of the model
+  objectBoundaryChain: Sparse csc matrix containing the cells
+  """
+
+  @< add a face to a model @>
+  
+  @< models definition @>
+
+  V, bases = getBases(imageDx, imageDy, imageDz)
+  FV = bases[3]
+
+  vertex_count_model = 1
+  vertex_count_left = 1
+  vertex_count_right = 1
+  vertex_count_top = 1
+  vertex_count_bottom = 1
+  vertex_count_front = 1
+  vertex_count_back = 1
+
+  #b2cells = Lar2Julia.cscChainToCellList(objectBoundaryChain)
+  # Get all cells (independently from orientation)
+  b2cells = findn(objectBoundaryChain)[1]
+
+  debug("b2cells = ", b2cells)
+
+  for f in b2cells
+    old_vertex_count_model = vertex_count_model
+    old_vertex_count_left = vertex_count_left
+    old_vertex_count_right = vertex_count_right
+    old_vertex_count_top = vertex_count_top
+    old_vertex_count_bottom = vertex_count_bottom
+    old_vertex_count_front = vertex_count_front
+    old_vertex_count_back = vertex_count_back
+
+    # Choosing the right model for vertex
+    if(isOnLeft(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_left = addFaceToModel(V, FV, V_left, FV_left,
+				  f, old_vertex_count_left)
+    elseif(isOnRight(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_right = addFaceToModel(V, FV, V_right, FV_right,
+				  f, old_vertex_count_right)
+    elseif(isOnTop(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_top = addFaceToModel(V, FV, V_top, FV_top,
+				  f, old_vertex_count_top)
+    elseif(isOnBottom(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_bottom = addFaceToModel(V, FV, V_bottom, FV_bottom,
+				  f, old_vertex_count_bottom)
+    elseif(isOnFront(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_front = addFaceToModel(V, FV, V_front, FV_front,
+				  f, old_vertex_count_front)
+    elseif(isOnBack(FV[f], V, imageDx, imageDy, imageDz))
+      vertex_count_back = addFaceToModel(V, FV, V_back, FV_back,
+				  f, old_vertex_count_back)
+    else
+      vertex_count_model = addFaceToModel(V, FV, V_model, FV_model,
+				  f, old_vertex_count_model)
+    end
+
+  end
+
+  # Removing double vertices
+  return [removeDoubleVerticesAndFaces(V_model, FV_model, 0)],
+  [removeDoubleVerticesAndFaces(V_left, FV_left, 0)],
+  [removeDoubleVerticesAndFaces(V_right, FV_right, 0)],
+  [removeDoubleVerticesAndFaces(V_top, FV_top, 0)],
+  [removeDoubleVerticesAndFaces(V_bottom, FV_bottom, 0)],
+  [removeDoubleVerticesAndFaces(V_front, FV_front, 0)],
+  [removeDoubleVerticesAndFaces(V_back, FV_back, 0)]
+end @}
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.30\linewidth]{images/sampleModelImage.png}
+   \includegraphics[width=0.30\linewidth]{images/sampleModel.png}
+   \includegraphics[width=0.30\linewidth]{images/sampleModel1.png}
+   \caption{Creation of a sample model. (a) The original image (b) The three-dimensional model (c) The three-dimensional model (detail with triangular faces)}
+   \label{fig:sampleModel}
+\end{figure}
+
 \subsection{Removing double faces and vertices from boundaries}\label{sec:removeDoubleFacesAndVerticesFromBoundaries}
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
@@ -2138,9 +2404,9 @@ function mergeObj(modelDirectory)
   """
 
   files = readdir(modelDirectory)
-  vertices_files = files[find(s -> contains(s,string("_vtx.stl")), files)]
-  faces_files = files[find(s -> contains(s,string("_faces.stl")), files)]
-  obj_file = open(string(modelDirectory,"/","model.obj"),"w") # Output file
+  vertices_files = files[find(s -> contains(s, string("_vtx.stl")), files)]
+  faces_files = files[find(s -> contains(s, string("_faces.stl")), files)]
+  obj_file = open(string(modelDirectory, "/", "model.obj"), "w") # Output file
 
   vertices_counts = Array(Int64, length(vertices_files))
   number_of_vertices = 0
@@ -2392,7 +2658,42 @@ function mergeObjParallel(modelDirectory)
 
 end
 
-function mergeAndRemoveDuplicates(firstPath, secondPath)
+function getModelsFromFiles(arrayV, arrayFV)
+  """
+  Get a LAR models for two arrays of vertices
+  and faces files
+
+  arrayV: Array containing all vertices files
+  arrayFV: Array containing all faces files
+  """
+
+  V = Array(Array{Int}, 0)
+  FV = Array(Array{Int}, 0)
+  offset = 0
+
+  for i in 1:length(arrayV)
+    if isfile(arrayFV[i])
+      f_FV = open(arrayFV[i])
+
+      for ln in eachline(f_FV)
+        splitted = split(ln)
+        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
+      end
+      close(f_FV)
+
+      f_V = open(arrayV[i])
+      for ln in eachline(f_V)
+        splitted = split(ln)
+        push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+        offset += 1
+      end
+      close(f_V)
+    end
+  end
+  return LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
+end
+
+function mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
   """
   Merge two boundary files removing common faces between
   them
@@ -2408,54 +2709,63 @@ function mergeAndRemoveDuplicates(firstPath, secondPath)
 
   if(isfile(firstPathV) && isfile(secondPathV))
 
-    V = Array(Array{Int}, 0)
-    FV = Array(Array{Int}, 0)
-
-    offset = 0
-
-    # First of all open files and retrieve LAR models
-
-    f1_V = open(firstPathV)
-    f1_FV = open(firstPathFV)
-
-    for ln in eachline(f1_V)
-      splitted = split(ln)
-      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
-      offset += 1
-    end
-
-    for ln in eachline(f1_FV)
-      splitted = split(ln)
-      push!(FV, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
-    end
-
-    close(f1_V)
-    close(f1_FV)
-
-    f2_V = open(secondPathV)
-    f2_FV = open(secondPathFV)
-
-    for ln in eachline(f2_V)
-      splitted = split(ln)
-      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
-    end
-
-    for ln in eachline(f2_FV)
-      splitted = split(ln)
-      push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
-    end
-
-    close(f2_V)
-    close(f2_FV)
-
-    V_final, FV_final = LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
+    V, FV = getModelsFromFiles([firstPathV, secondPathV], [firstPathFV, secondPathFV])
 
     # Writing model to file
     rm(firstPathV)
     rm(firstPathFV)
     rm(secondPathV)
     rm(secondPathFV)
-    writeToObj(V_final, FV_final, firstPath)
+    writeToObj(V, FV, firstPath)
+  end
+end
+
+function mergeBlocksProcess(modelDirectory, startImage, endImage,
+                            imageDx, imageDy,
+                            imageWidth, imageHeight)
+  """
+  Helper function for mergeBlocks.
+  It is executed on different processes
+
+  modelDirectory: Directory containing model files
+  startImage: Block start image
+  endImage: Block end image
+  imageDx, imageDy: x and y sizes of the grid
+  imageWidth, imageHeight: Width and Height of the image
+  """
+  for xBlock in 0:(imageHeight / imageDx - 1)
+    for yBlock in 0:(imageWidth / imageDy - 1)
+
+      blockCoordsV = string(xBlock, "-", yBlock, "_", startImage, "_", endImage, "_vtx.stl")
+      blockCoordsFV = string(xBlock, "-", yBlock, "_", startImage, "_", endImage, "_faces.stl")
+
+      arrayV = [string(modelDirectory, "/left_output_",blockCoordsV),
+                string(modelDirectory, "/right_output_",blockCoordsV),
+                string(modelDirectory, "/top_output_",blockCoordsV),
+                string(modelDirectory, "/bottom_output_",blockCoordsV),
+                string(modelDirectory, "/front_output_",blockCoordsV),
+                string(modelDirectory, "/back_output_",blockCoordsV),
+                string(modelDirectory, "/model_output_",blockCoordsV)]
+
+      arrayFV = [string(modelDirectory, "/left_output_",blockCoordsFV),
+                 string(modelDirectory, "/right_output_",blockCoordsFV),
+                 string(modelDirectory, "/top_output_",blockCoordsFV),
+                 string(modelDirectory, "/bottom_output_",blockCoordsFV),
+                 string(modelDirectory, "/front_output_",blockCoordsFV),
+                 string(modelDirectory, "/back_output_",blockCoordsFV),
+                 string(modelDirectory, "/model_output_",blockCoordsFV)]
+
+      V, FV = getModelsFromFiles(arrayV, arrayFV)
+      for i in 1:length(arrayV)
+        if(isfile(arrayV[i]))
+          rm(arrayV[i])
+          rm(arrayFV[i])
+        end
+      end
+      writeToObj(V, FV, string(modelDirectory, "/model_output_",
+                               xBlock, "-", yBlock, "_", startImage, "_", endImage))
+
+    end
   end
 end
 
@@ -2465,9 +2775,9 @@ function mergeBoundariesProcess(modelDirectory, startImage, endImage,
   """
   Helper function for mergeBoundaries.
   It is executed on different processes
-  
+
   modelDirectory: Directory containing model files
-  startImage: Block start image 
+  startImage: Block start image
   endImage: Block end image
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
@@ -2478,17 +2788,17 @@ function mergeBoundariesProcess(modelDirectory, startImage, endImage,
       # Merging right Boundary
       firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
       secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1, "_", startImage, "_", endImage)
-      mergeAndRemoveDuplicates(firstPath, secondPath)
+      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 
       # Merging top boundary
       firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
       secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
-      mergeAndRemoveDuplicates(firstPath, secondPath)
+      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 
       # Merging front boundary
       firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
       secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock, "_", startImage, "_", endImage)
-      mergeAndRemoveDuplicates(firstPath, secondPath)
+      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
     end
   end
 end
@@ -2516,8 +2826,39 @@ function mergeBoundaries(modelDirectory,
     startImage = endImage
     endImage = startImage + imageDz
     task = @@spawn mergeBoundariesProcess(modelDirectory, startImage, endImage,
-                           imageDx, imageDy,
-                           imageWidth, imageHeight)
+                                         imageDx, imageDy,
+                                         imageWidth, imageHeight)
+    push!(tasks, task)
+  end
+
+  # Waiting for tasks
+  for task in tasks
+    wait(task)
+  end
+end
+
+function mergeBlocks(modelDirectory,
+                     imageHeight, imageWidth, imageDepth,
+                     imageDx, imageDy, imageDz)
+  """
+  Merge block taking the models and the corresponding boundaries.
+  For every merged block double faces and vertices are removed.
+
+  modelDirectory: directory containing models
+  imageHeight, imageWidth, imageDepth: images sizes
+  imageDx, imageDy, imageDz: sizes of cells grid
+  """
+
+  beginImageStack = 0
+  endImage = beginImageStack
+
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 0:(imageDepth / imageDz - 1)
+    startImage = endImage
+    endImage = startImage + imageDz
+    task = @@spawn mergeBlocksProcess(modelDirectory, startImage, endImage,
+                                     imageDx, imageDy,
+                                     imageWidth, imageHeight)
     push!(tasks, task)
   end
 
