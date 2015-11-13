@@ -1052,10 +1052,8 @@ Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
     for yBlock in 0:(imageWidth / imageDy - 1)
       yStart = xBlock * imageDx
       xStart = yBlock * imageDy
-      #xEnd = xStart + imageDx
-      #yEnd = yStart + imageDy
-      xEnd = xStart + imageDy
-      yEnd = yStart + imageDx
+      xEnd = xStart + imageDx
+      yEnd = yStart + imageDy
       debug("***********")
       debug(string("xStart = ", xStart, " xEnd = ", xEnd))
       debug(string("yStart = ", yStart, " yEnd = ", yEnd))
