@@ -1331,6 +1331,32 @@ Another operation that could be useful (even if it is not actually used in the p
   end
   return cellList
 end @}
+
+\subsection{Transform relationships from arrays of arrays to a sparse matrix}\label{sec:transformSparse}
+
+@D transform relationships to csc
+@{function relationshipListToCSC(larRelation)
+  """
+  Get a LAR relationship
+  and convert it into a CSC matrix
+  """
+
+  # Build I and J arrays for creation of
+  # sparse matrix
+  data = Array(Int, 0)
+  I = Array(Int, 0)
+  J = Array(Int, 0)
+  for (k,row) in enumerate(larRelation)
+    for col in row
+      push!(I, k)
+      push!(J, col)
+      push!(data, 1)
+    end
+  end
+
+  return sparse(I, J, data)
+end @}
+
 %===============================================================================
 \section{LARUtils}\label{sec:LARUtils}
 %===============================================================================
@@ -1892,6 +1918,62 @@ end @}
 \end{figure}
 
 \subsection{Removing double faces and vertices from boundaries}\label{sec:removeDoubleFacesAndVerticesFromBoundaries}
+
+\subsection{Smoothing models}\label{sec:smoothing}
+
+@D Smoothing of a LAR model
+@{function adjacencyQuery(FV)
+  """
+  Takes the faces of a LAR model and returns
+  a sparse matrix containing the adjacent vertices
+  """
+  cscFV = relationshipListToCSC(FV)
+  cscAdj = transpose(cscFV) * cscFV
+  return cscAdj
+end
+
+function adjVerts(V, FV)
+  """
+  Compute the adjacency graph of vertices
+  of a LAR model
+
+  V, FV: LAR model
+
+  Returns the list of indices of vertices adjacent
+  to a vertex
+  """
+  VV = Array{Int}[]
+  V2V = adjacencyQuery(FV)
+
+  for i in 1:length(V)
+    dataBuffer = nonzeros(V2V[i, :])
+    colBuffer = findn(V2V[i, :])[2]
+    row = Array(Int, 0)
+    for (val, j) in zip(dataBuffer, colBuffer)
+      if val == 2
+        push!(row, j)
+      end
+    end
+    push!(VV, [row])
+  end
+  return VV
+end
+
+function makeSmoothing(V)
+  """
+  Execute a Laplacian smoothing on a LAR model returning
+  the new smoothed model
+
+  V, FV: LAR model
+  """
+  VV = adjVerts(V, FV)
+
+  # TODO: Convert these statements from python to Julia
+  V1 = AA(CCOMB)([[V[v] for v in adjs] for adjs in VV])
+  V2 = AA(CCOMB)([[V1[v] for v in adjs] for adjs in VV])
+end
+@}
+
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================
@@ -1958,6 +2040,8 @@ end
 @< get boundary chain @>
 
 @< get oriented cells from a chain @>
+
+@< transform relationships to csc @>
 end
 @}
 

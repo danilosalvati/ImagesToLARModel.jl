@@ -80,4 +80,26 @@ function cscChainToCellList(CSCm)
   end
   return cellList
 end 
+
+function relationshipListToCSC(larRelation)
+  """
+  Get a LAR relationship
+  and convert it into a CSC matrix
+  """
+
+  # Build I and J arrays for creation of
+  # sparse matrix
+  data = Array(Int, 0)
+  I = Array(Int, 0)
+  J = Array(Int, 0)
+  for (k,row) in enumerate(larRelation)
+    for col in row
+      push!(I, k)
+      push!(J, col)
+      push!(data, 1)
+    end
+  end
+
+  return sparse(I, J, data)
+end 
 end
