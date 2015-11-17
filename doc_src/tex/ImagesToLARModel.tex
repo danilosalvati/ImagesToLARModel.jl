@@ -879,6 +879,45 @@ This is the final code for this function:
     wait(task)
   end
   @< final file merge @>
+  
+  ################################################################à
+  #=
+  f = open(string(outputDirectory, "MODELS/model.obj"))
+  V = Array(Array{Int}, 0)
+  FV = Array(Array{Int}, 0)
+  for ln in eachline(f)
+    splitted = split(ln)
+    if(splitted[1] == "v")
+      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+    else
+      push!(FV, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+    end
+  end
+  close(f)
+  # Smoothing the model
+  V_cl, FV_cl = LARUtils.removeDoubleVerticesAndFaces(V, FV, 0)
+  V_sm, FV_sm = LARUtils.smoothModel(V_cl, FV_cl)
+
+  fil = open(string(outputDirectory, "MODELS/model_sm.obj"), "w")
+  for v in V_sm
+    write(fil, "v ")
+    write(fil, string(v[1], " "))
+    write(fil, string(v[2], " "))
+    write(fil, string(v[3], "\n"))
+  end
+
+  for f in FV_sm
+
+    write(fil, "f ")
+    write(fil, string(f[1], " "))
+    write(fil, string(f[2], " "))
+    write(fil, string(f[3], "\n"))
+  end
+  
+  close(fil)
+  =#
+  
+  
   end
 @}
 
@@ -1369,6 +1408,8 @@ These are modules used in \texttt{LARUtils} and the functions exported
 
 @D modules import LARUtils
 @{using Logging
+
+import Lar2julia
 
 export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
     computeModel, computeModelAndBoundaries
@@ -1927,10 +1968,46 @@ end @}
   Takes the faces of a LAR model and returns
   a sparse matrix containing the adjacent vertices
   """
-  cscFV = relationshipListToCSC(FV)
-  cscAdj = transpose(cscFV) * cscFV
+  cscFV = Lar2Julia.relationshipListToCSC(FV)
+  info("****************************************************************")
+  warn("cscFV = ", full(cscFV))
+  info("FV = ", FV)
+  spValues = findnz(cscFV)
+  cscTransposed = sparse(spValues[2], spValues[1], spValues[3])
+  cscAdj = cscTransposed * cscFV
   return cscAdj
 end
+#=
+function adjVerts(V, FV)
+  """
+  Compute the adjacency graph of vertices
+  of a LAR model (Bugged version)
+
+  V, FV: LAR model
+
+  Returns the list of indices of vertices adjacent
+  to a vertex
+  """
+  VV = Array{Int}[]
+  V2V = adjacencyQuery(FV)
+  warn("V = ", V)
+
+  for i in 1:length(V)
+    dataBuffer = nonzeros(V2V[i, :])
+    colBuffer = findn(V2V[i, :])[2]
+    row = Array(Int, 0)
+    for (val, j) in zip(dataBuffer, colBuffer)
+      if val == 2
+        push!(row, j)
+      end
+    end
+
+    push!(VV, [row])
+  end
+  return VV
+end
+=#
+
 
 function adjVerts(V, FV)
   """
@@ -1943,23 +2020,60 @@ function adjVerts(V, FV)
   to a vertex
   """
   VV = Array{Int}[]
-  V2V = adjacencyQuery(FV)
-
   for i in 1:length(V)
-    dataBuffer = nonzeros(V2V[i, :])
-    colBuffer = findn(V2V[i, :])[2]
     row = Array(Int, 0)
-    for (val, j) in zip(dataBuffer, colBuffer)
-      if val == 2
-        push!(row, j)
+    for face in FV
+      if i in face
+        for v in face
+          push!(row, v)
+        end
       end
     end
-    push!(VV, [row])
+    if length(row) == 0
+      push!(row, i)
+    end
+    push!(VV, [unique(row)])
   end
   return VV
 end
 
-function makeSmoothing(V)
+
+
+function makeSingleIterationSmoothing(V, VV)
+  """
+  Execute a single iteration of a laplacian
+  smoothing on a LAR model
+
+  V: array of vertices of the LAR model
+  VV: Array containing adjacent vertices of the LAR model
+
+  return the modified array of vertices
+  """
+  V1 = Array(Array{Float64},0)
+  V_temp = Array(Array{Float64},0)
+
+  for i in 1:length(VV)
+    adjs = VV[i]
+    # Get all coordinates for adjacent vertices
+    coords = Array(Array{Float64}, 0)
+    for v in adjs
+      push!(coords, V[v])
+    end
+
+    # Computing sum of all vectors
+    sum = [0.0, 0.0, 0.0]
+    for v in coords
+      sum += v
+    end
+
+    # Computing convex combination of vertices
+    push!(V1, sum/length(adjs))
+
+  end
+  return V1
+end
+
+function smoothModel(V, FV)
   """
   Execute a Laplacian smoothing on a LAR model returning
   the new smoothed model
@@ -1967,10 +2081,15 @@ function makeSmoothing(V)
   V, FV: LAR model
   """
   VV = adjVerts(V, FV)
+  # Execute several iterations of the smoothing algorithm
+  iterations = 2
+  
+  newV = V
+  for i in 1:iterations
+    newV = makeSingleIterationSmoothing(newV, VV)
+  end
 
-  # TODO: Convert these statements from python to Julia
-  V1 = AA(CCOMB)([[V[v] for v in adjs] for adjs in VV])
-  V2 = AA(CCOMB)([[V1[v] for v in adjs] for adjs in VV])
+  return newV, FV
 end
 @}
 
@@ -2667,7 +2786,7 @@ function mergeObjHelper(vertices_files, faces_files)
   end
 
   # Merging last vertices files
-  task = @@spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
+  task = @spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
   push!(tasks, task)
   #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end]))
 
@@ -2682,7 +2801,7 @@ function mergeObjHelper(vertices_files, faces_files)
   tasks = Array(RemoteRef, 0)
   for i in 1 : length(taskArray) - 1
 
-    task = @@spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
+    task = @spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
                                     numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
 
@@ -2844,9 +2963,11 @@ function mergeBlocksProcess(modelDirectory, startImage, endImage,
           rm(arrayFV[i])
         end
       end
-      writeToObj(V, FV, string(modelDirectory, "/model_output_",
-                               xBlock, "-", yBlock, "_", startImage, "_", endImage))
 
+      # Smoothing the model
+      V_sm, FV_sm = LARUtils.smoothModel(V, FV)
+      writeToObj(V_sm, FV_sm, string(modelDirectory, "/model_output_",
+                                     xBlock, "-", yBlock, "_", startImage, "_", endImage))
     end
   end
 end
@@ -2942,6 +3063,9 @@ function mergeBlocks(modelDirectory,
                                      imageDx, imageDy,
                                      imageWidth, imageHeight)
     push!(tasks, task)
+    #=mergeBlocksProcess(modelDirectory, startImage, endImage,
+                                     imageDx, imageDy,
+                                     imageWidth, imageHeight)=#
   end
 
   # Waiting for tasks

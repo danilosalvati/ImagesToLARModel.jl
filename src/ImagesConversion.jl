@@ -125,6 +125,45 @@ function startImageConversion(sliceDirectory, bestImage, outputDirectory, border
     Model2Obj.mergeObj(string(outputDirectory, "MODELS"))
   end
   
+  
+  ################################################################à
+  #=
+  f = open(string(outputDirectory, "MODELS/model.obj"))
+  V = Array(Array{Int}, 0)
+  FV = Array(Array{Int}, 0)
+  for ln in eachline(f)
+    splitted = split(ln)
+    if(splitted[1] == "v")
+      push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+    else
+      push!(FV, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+    end
+  end
+  close(f)
+  # Smoothing the model
+  V_cl, FV_cl = LARUtils.removeDoubleVerticesAndFaces(V, FV, 0)
+  V_sm, FV_sm = LARUtils.smoothModel(V_cl, FV_cl)
+
+  fil = open(string(outputDirectory, "MODELS/model_sm.obj"), "w")
+  for v in V_sm
+    write(fil, "v ")
+    write(fil, string(v[1], " "))
+    write(fil, string(v[2], " "))
+    write(fil, string(v[3], "\n"))
+  end
+
+  for f in FV_sm
+
+    write(fil, "f ")
+    write(fil, string(f[1], " "))
+    write(fil, string(f[2], " "))
+    write(fil, string(f[3], "\n"))
+  end
+  
+  close(fil)
+  =#
+  
+  
   end
 
 

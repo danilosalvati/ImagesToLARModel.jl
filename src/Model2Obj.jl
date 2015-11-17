@@ -233,7 +233,7 @@ function mergeObjHelper(vertices_files, faces_files)
   end
 
   # Merging last vertices files
-  task = @spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
+  task = pawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
   push!(tasks, task)
   #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end]))
 
@@ -248,7 +248,7 @@ function mergeObjHelper(vertices_files, faces_files)
   tasks = Array(RemoteRef, 0)
   for i in 1 : length(taskArray) - 1
 
-    task = @spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
+    task = pawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
                                     numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
 
@@ -410,9 +410,11 @@ function mergeBlocksProcess(modelDirectory, startImage, endImage,
           rm(arrayFV[i])
         end
       end
-      writeToObj(V, FV, string(modelDirectory, "/model_output_",
-                               xBlock, "-", yBlock, "_", startImage, "_", endImage))
 
+      # Smoothing the model
+      V_sm, FV_sm = LARUtils.smoothModel(V, FV)
+      writeToObj(V_sm, FV_sm, string(modelDirectory, "/model_output_",
+                                     xBlock, "-", yBlock, "_", startImage, "_", endImage))
     end
   end
 end
@@ -508,6 +510,9 @@ function mergeBlocks(modelDirectory,
                                      imageDx, imageDy,
                                      imageWidth, imageHeight)
     push!(tasks, task)
+    #=mergeBlocksProcess(modelDirectory, startImage, endImage,
+                                     imageDx, imageDy,
+                                     imageWidth, imageHeight)=#
   end
 
   # Waiting for tasks

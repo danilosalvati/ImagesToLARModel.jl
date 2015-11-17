@@ -29,6 +29,7 @@
 - When creating stl files we need all cubes or only "+1" oriented faces?
 - Add functions for removing double vertices and faces (it could be an iterative local removing)
 - Combine faces on same plane into a unique face
+- Remove coupling between file loading and double vertices and faces removing
 
 ## Tests
 

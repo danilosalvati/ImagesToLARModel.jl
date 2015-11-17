@@ -2,6 +2,8 @@ module LARUtils
 
 using Logging
 
+import Lar2julia
+
 export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
     computeModel, computeModelAndBoundaries
 
