@@ -19,7 +19,7 @@ export computeOriented3Border, writeBorder, getOriented3BorderPath
 # Search for python modules in package folder
 unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
 @pyimport larcc # Importing larcc from local folder
-@pyimport scipy.sparse as Pysparse 
+
 
 # Compute the 3-border operator
 function computeOriented3Border(nx, ny, nz)
@@ -41,20 +41,17 @@ function writeBorder(boundaryMatrix, outputFile)
   outputFile: path of the outputFile
   """
 
-  rowcount = boundaryMatrix[:shape][1]
-  colcount = boundaryMatrix[:shape][2]
+  fullBorder = pycall(boundaryMatrix["toarray"], PyAny)
+  cscBorder = sparse(fullBorder)
+  row = findn(cscBorder)[1]
+  col = findn(cscBorder)[2]
+  data = nonzeros(cscBorder)
 
-  row = boundaryMatrix[:indptr]
-  col = boundaryMatrix[:indices]
-  data = boundaryMatrix[:data]
+  matrixObj = MatrixObject(0, 0, row, col, data)
 
-  # Writing informations on file
-  outfile = open(outputFile, "w")
-
-  matrixObj = MatrixObject(rowcount, colcount, row, col, data)
+  outfile = open(string(outputFile), "w")
   JSON.print(outfile, matrixObj)
   close(outfile)
-
 end 
 
 function getOriented3BorderPath(borderPath, nx, ny, nz)
@@ -77,13 +74,13 @@ end
 
 function getBorderMatrix(borderFilename)
   """
-  TO REMOVE WHEN PORTING OF LARCC IN JULIA IS COMPLETED
-
   Get the border matrix from json file and convert it in
   CSC format
   """
   # Loading borderMatrix from json file
   borderData = JSON.parsefile(borderFilename)
+  
+  # Converting Any arrays into Int arrays
   row = Array(Int64, length(borderData["ROW"]))
   col = Array(Int64, length(borderData["COL"]))
   data = Array(Int64, length(borderData["DATA"]))
@@ -99,15 +96,6 @@ function getBorderMatrix(borderFilename)
   for i in 1: length(borderData["DATA"])
     data[i] = borderData["DATA"][i]
   end
-
-  # Converting csr matrix to csc
-  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), 
-                        shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
-  denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
-
-  cscBoundaryMat = sparse(denseMatrix)
-
-  return cscBoundaryMat
-
+  return sparse(row, col, data)
 end 
 end

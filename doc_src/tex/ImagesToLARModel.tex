@@ -1143,7 +1143,7 @@ export computeOriented3Border, writeBorder, getOriented3BorderPath
 # Search for python modules in package folder
 unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
 @@pyimport larcc # Importing larcc from local folder
-@@pyimport scipy.sparse as Pysparse @}
+@}
 
 We can notice some lines for importing \texttt{larcc} python library, which will be used in subsection~\ref{sec:transformBorder}
 
@@ -1183,20 +1183,17 @@ We have already seen that for performance reasons border operator matrix is save
   outputFile: path of the outputFile
   """
 
-  rowcount = boundaryMatrix[:shape][1]
-  colcount = boundaryMatrix[:shape][2]
+  fullBorder = pycall(boundaryMatrix["toarray"], PyAny)
+  cscBorder = sparse(fullBorder)
+  row = findn(cscBorder)[1]
+  col = findn(cscBorder)[2]
+  data = nonzeros(cscBorder)
 
-  row = boundaryMatrix[:indptr]
-  col = boundaryMatrix[:indices]
-  data = boundaryMatrix[:data]
+  matrixObj = MatrixObject(0, 0, row, col, data)
 
-  # Writing informations on file
-  outfile = open(outputFile, "w")
-
-  matrixObj = MatrixObject(rowcount, colcount, row, col, data)
+  outfile = open(string(outputFile), "w")
   JSON.print(outfile, matrixObj)
   close(outfile)
-
 end @}
 
 We can see that, in final JSON file, we write an object called \texttt{MatrixObject} which has the following definition:
@@ -1209,6 +1206,8 @@ We can see that, in final JSON file, we write an object called \texttt{MatrixObj
   COL
   DATA
 end @}
+
+The most important fields of this object are the last three ones; the first two contain all coordinates of the non-zero elements, the last contains all non-zero elements of the sparse matrix. So considering the full matrix \textit{V} we will have that $S[ROW[k], COL[k]] = V[k]$.
 
 \subsection{Compute border matrix}\label{sec:computeBorder}
 
@@ -1229,18 +1228,18 @@ end @}
 
 \subsection{Transform border matrix}\label{sec:transformBorder}
 
-We have seen that matrix stored in JSON file was in csr matrix as it was returned from \texttt{larcc} module of LAR library. However, Julia has only sparse matrices in csc format, so we need a function for loading the contents of JSON file converting the output for next uses with Julia libraries. When porting of \texttt{larcc} in Julia will be complete, we can safely remove this function
+Last function we will see, extracts the \texttt{MatrixObject} in Section~\ref{sec:writeBorderMatrix} converting it into a common Julia csc sparse matrix
 
 @D transform border matrix in csc format
 @{function getBorderMatrix(borderFilename)
   """
-  TO REMOVE WHEN PORTING OF LARCC IN JULIA IS COMPLETED
-
   Get the border matrix from json file and convert it in
   CSC format
   """
   # Loading borderMatrix from json file
   borderData = JSON.parsefile(borderFilename)
+  
+  # Converting Any arrays into Int arrays
   row = Array(Int64, length(borderData["ROW"]))
   col = Array(Int64, length(borderData["COL"]))
   data = Array(Int64, length(borderData["DATA"]))
@@ -1256,16 +1255,7 @@ We have seen that matrix stored in JSON file was in csr matrix as it was returne
   for i in 1: length(borderData["DATA"])
     data[i] = borderData["DATA"][i]
   end
-
-  # Converting csr matrix to csc
-  csrBorderMatrix = Pysparse.csr_matrix((data,col,row), 
-			shape=(borderData["ROWCOUNT"],borderData["COLCOUNT"]))
-  denseMatrix = pycall(csrBorderMatrix["toarray"],PyAny)
-
-  cscBoundaryMat = sparse(denseMatrix)
-
-  return cscBoundaryMat
-
+  return sparse(row, col, data)
 end @}
 
 %===============================================================================
