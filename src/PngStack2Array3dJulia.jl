@@ -2,10 +2,10 @@ module PngStack2Array3dJulia
 
 using Images # For loading png images
 using Colors # For grayscale images
-using PyCall # For including python clustering
+using PyCall
+using Clustering
 using Logging
 @pyimport scipy.ndimage as ndimage
-@pyimport scipy.cluster.vq as cluster
 
 NOISE_SHAPE_DETECT=10
 
@@ -139,9 +139,9 @@ function calculateClusterCentroids(path, image, numberOfClusters = 2)
   push!(image3d, imArray)
   pixel = reshape(image3d[1], (imageWidth * imageHeight), 1)
 
-  centroids,_ = cluster.kmeans(pixel, numberOfClusters)
+  centroids = kmeans(convert(Array{Float64},transpose(pixel)), 2).centers
 
-  return centroids
+  return convert(Array{Uint8}, trunc(centroids))
 
 end
 
@@ -183,11 +183,10 @@ function pngstack2array3d(path, minSlice, maxSlice, centroids)
     debug("page = ", page)
     debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
     pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-    qnt,_ = cluster.vq(pixel,centroids)
+    qnt = kmeans!(convert(Array{Float64},transpose(pixel)), convert(Array{Float64},centroids)).assignments
 
     # Reshaping quantization result
     centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
-    #centers_idx = reshape(qnt, size(image3d[page]))
 
     # Inserting quantized values into 3d image array
     tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
