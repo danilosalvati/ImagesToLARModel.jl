@@ -23,7 +23,7 @@ function adjVerts(V, FV)
     if length(row) == 0
       push!(row, i)
     end
-    push!(VV, [unique(row)])
+    push!(VV, collect(unique(row)))
   end
   return VV
 end

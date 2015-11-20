@@ -7,7 +7,8 @@
 ## PngStack2Array3dJulia
 
 - Actually if images dimensions are odd I remove one pixel; perhaps it would be better to add one instead
-- Images convertion need to be parallelized
+- Images conversion need to be parallelized
+- Resolve this for Julia 0.4 WARNING: imwrite(img,filename; kwargs...) is deprecated, use save(filename,img; kwargs...) instead.
 
 ## LARUtils
 

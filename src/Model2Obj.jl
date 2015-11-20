@@ -317,7 +317,7 @@ function getModelsFromFiles(arrayV, arrayFV)
   """
 
   V = Array(Array{Float64}, 0)
-  FV = Array(Array{Float64}, 0)
+  FV = Array(Array{Int}, 0)
   offset = 0
 
   for i in 1:length(arrayV)

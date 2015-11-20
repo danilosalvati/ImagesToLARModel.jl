@@ -1367,8 +1367,6 @@ These are modules used in \texttt{LARUtils} and the functions exported
 @D modules import LARUtils
 @{using Logging
 
-import Lar2julia
-
 export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
     computeModel, computeModelAndBoundaries
 @}
@@ -1856,7 +1854,6 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
   vertex_count_front = 1
   vertex_count_back = 1
 
-  #b2cells = Lar2Julia.cscChainToCellList(objectBoundaryChain)
   # Get all cells (independently from orientation)
   b2cells = findn(objectBoundaryChain)[1]
 
@@ -2699,7 +2696,7 @@ function getModelsFromFiles(arrayV, arrayFV)
   """
 
   V = Array(Array{Float64}, 0)
-  FV = Array(Array{Float64}, 0)
+  FV = Array(Array{Int}, 0)
   offset = 0
 
   for i in 1:length(arrayV)
@@ -3046,7 +3043,7 @@ function adjVerts(V, FV)
     if length(row) == 0
       push!(row, i)
     end
-    push!(VV, [unique(row)])
+    push!(VV, collect(unique(row)))
   end
   return VV
 end
