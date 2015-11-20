@@ -40,3 +40,11 @@
   - GenerateBorderMatrix
   - Lar2Julia
   - Model2Obj
+
+## Documentation
+
+- Update architecture schema with new modules and functions
+- Add documentation for smoother
+- Add documentation for Model2Obj
+- Finish documentation for LArUtils
+- Update documentation for Lar2Julia (conversion fom LAR list to sparse array)

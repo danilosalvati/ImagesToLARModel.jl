@@ -28,19 +28,16 @@ function adjVerts(V, FV)
   return VV
 end
 
-
-
-function makeSingleIterationSmoothing(V, VV)
+function smoothModel(V, FV)
   """
-  Execute a single iteration of a laplacian
-  smoothing on a LAR model
+  Execute a Laplacian smoothing on a LAR model returning
+  the new smoothed model
 
-  V: array of vertices of the LAR model
-  VV: Array containing adjacent vertices of the LAR model
-
-  return the modified array of vertices
+  V, FV: LAR model
   """
-  V1 = Array(Array{Float64},0)
+
+  VV = adjVerts(V, FV)
+  newV = Array(Array{Float64},0)
   V_temp = Array(Array{Float64},0)
 
   for i in 1:length(VV)
@@ -58,26 +55,8 @@ function makeSingleIterationSmoothing(V, VV)
     end
 
     # Computing convex combination of vertices
-    push!(V1, sum/length(adjs))
+    push!(newV, sum/length(adjs))
 
-  end
-  return V1
-end
-
-function smoothModel(V, FV)
-  """
-  Execute a Laplacian smoothing on a LAR model returning
-  the new smoothed model
-
-  V, FV: LAR model
-  """
-  VV = adjVerts(V, FV)
-  # Execute several iterations of the smoothing algorithm
-  iterations = 1 # Probably this is not the better place for this
-
-  newV = V
-  for i in 1:iterations
-    newV = makeSingleIterationSmoothing(newV, VV)
   end
 
   return newV, FV

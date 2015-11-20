@@ -1,7 +1,7 @@
 module Model2Obj
 
 import LARUtils
-import Smoothing
+import Smoother
 
 using Logging
 
@@ -234,7 +234,7 @@ function mergeObjHelper(vertices_files, faces_files)
   end
 
   # Merging last vertices files
-  task = pawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
+  task = @spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
   push!(tasks, task)
   #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end]))
 
@@ -249,7 +249,7 @@ function mergeObjHelper(vertices_files, faces_files)
   tasks = Array(RemoteRef, 0)
   for i in 1 : length(taskArray) - 1
 
-    task = pawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
+    task = @spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
                                     numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
 
@@ -316,8 +316,8 @@ function getModelsFromFiles(arrayV, arrayFV)
   arrayFV: Array containing all faces files
   """
 
-  V = Array(Array{Int}, 0)
-  FV = Array(Array{Int}, 0)
+  V = Array(Array{Float64}, 0)
+  FV = Array(Array{Float64}, 0)
   offset = 0
 
   for i in 1:length(arrayV)
@@ -413,7 +413,7 @@ function mergeBlocksProcess(modelDirectory, startImage, endImage,
       end
 
       writeToObj(V, FV, string(modelDirectory, "/model_output_",
-                                     xBlock, "-", yBlock, "_", startImage, "_", endImage))
+                               xBlock, "-", yBlock, "_", startImage, "_", endImage))
     end
   end
 end
@@ -441,7 +441,7 @@ function mergeBoundariesProcess(modelDirectory, startImage, endImage,
 
       # Merging top boundary
       firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-      secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
+      secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + (endImage - startImage))
       mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 
       # Merging front boundary
@@ -467,23 +467,10 @@ function mergeBoundaries(modelDirectory,
   imageDx, imageDy, imageDz: sizes of cells grid
   """
 
-  beginImageStack = 0
-  endImage = beginImageStack
-
-  tasks = Array(RemoteRef, 0)
-  for zBlock in 0:(imageDepth / imageDz - 1)
-    startImage = endImage
-    endImage = startImage + imageDz
-    task = @spawn mergeBoundariesProcess(modelDirectory, startImage, endImage,
-                                         imageDx, imageDy,
-                                         imageWidth, imageHeight)
-    push!(tasks, task)
-  end
-
-  # Waiting for tasks
-  for task in tasks
-    wait(task)
-  end
+  iterateOnBlocks(modelDirectory,
+                  imageHeight, imageWidth, imageDepth,
+                  imageDx, imageDy, imageDz,
+                  mergeBoundariesProcess)
 end
 
 function mergeBlocks(modelDirectory,
@@ -498,26 +485,10 @@ function mergeBlocks(modelDirectory,
   imageDx, imageDy, imageDz: sizes of cells grid
   """
 
-  beginImageStack = 0
-  endImage = beginImageStack
-
-  tasks = Array(RemoteRef, 0)
-  for zBlock in 0:(imageDepth / imageDz - 1)
-    startImage = endImage
-    endImage = startImage + imageDz
-    task = @spawn mergeBlocksProcess(modelDirectory, startImage, endImage,
-                                     imageDx, imageDy,
-                                     imageWidth, imageHeight)
-    push!(tasks, task)
-    #=mergeBlocksProcess(modelDirectory, startImage, endImage,
-                                     imageDx, imageDy,
-                                     imageWidth, imageHeight)=#
-  end
-
-  # Waiting for tasks
-  for task in tasks
-    wait(task)
-  end
+  iterateOnBlocks(modelDirectory,
+                  imageHeight, imageWidth, imageDepth,
+                  imageDx, imageDy, imageDz,
+                  mergeBlocksProcess)
 end
 
 function smoothBlocksProcess(modelDirectory, startImage, endImage,
@@ -545,121 +516,17 @@ function smoothBlocksProcess(modelDirectory, startImage, endImage,
         blockModelV, blockModelFV = getModelsFromFiles([blockFileV], [blockFileFV])
 
         # Loading a unique model from this block and its adjacents
-        modelsFilesV = [string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
+        modelsFiles = Array(String, 0)
+        for x in xBlock - 1:xBlock + 1
+          for y in yBlock - 1:yBlock + 1
+            for z in range(startImage - (endImage - startImage),(endImage - startImage), 3)
+              push!(modelsFiles, string(modelDirectory, "/model_output_", x, "-", y, "_", z, "_", z + (endImage - startImage)))
+            end
+          end
+        end
 
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl")]
-
-        modelsFilesFV = [string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl")]
-
-
+        modelsFilesV = map((s) -> string(s, "_vtx.stl"), modelsFiles)
+        modelsFilesFV = map((s) -> string(s, "_faces.stl"), modelsFiles)
 
         modelV, modelFV = getModelsFromFiles(modelsFilesV, modelsFilesFV)
 
@@ -681,44 +548,11 @@ function smoothBlocksProcess(modelDirectory, startImage, endImage,
             push!(V_final, V_sm[i])
           end
           outputFilename = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-          #warn("V_final", V_final)
-          #info("FV_final", blockModelFV)
           writeToObj(V_final, blockModelFV, outputFilename)
         end
       end
     end
   end
-end
-
-function smoothBlocksIteration(modelDirectory,
-                               imageHeight, imageWidth, imageDepth,
-                               imageDx, imageDy, imageDz)
-  """
-  A single iteration of blocks smoothing
-
-  modelDirectory: path of the directory containing the models
-  imageHeight, imageWidth, imageDepth: sizes of the images
-  imageDx, imageDy, imageDz: sizes of the grid
-  """
-  beginImageStack = 0
-  endImage = beginImageStack
-
-  tasks = Array(RemoteRef, 0)
-  for zBlock in 0:(imageDepth / imageDz - 1)
-    startImage = endImage
-    endImage = startImage + imageDz
-    task = @spawn smoothBlocksProcess(modelDirectory, startImage, endImage,
-                                      imageDx, imageDy,
-                                      imageWidth, imageHeight)
-    push!(tasks, task)
-  end
-
-  # Waiting for tasks
-  for task in tasks
-    wait(task)
-  end
-
-
 end
 
 function smoothBlocks(modelDirectory,
@@ -728,17 +562,62 @@ function smoothBlocks(modelDirectory,
   Smoothes all blocks of the
   model
   """
+  iterations = 1
+  for i in 1:iterations
+    info("Smoothing iteration ", i)
+    iterateOnBlocks(modelDirectory,
+                    imageHeight, imageWidth, imageDepth,
+                    imageDx, imageDy, imageDz,
+                    smoothBlocksProcess)
+
+    # Removing old models
+    files = readdir(modelDirectory)
+    toRemove = filter((s) -> contains(s, "model") == true, files)
+    for f in toRemove
+      rm(string(modelDirectory, "/", f))
+    end
+
+    # Rename smoothed files for next iterations
+    toMove = filter((s) -> contains(s, "smoothed") == true, files)
+    for f in toMove
+      mv(string(modelDirectory, "/", f), string(modelDirectory, "/", replace(f, "smoothed", "model")))
+    end
+  end
+
+end
 
 
-  smoothBlocksIteration(modelDirectory,
-                        imageHeight, imageWidth, imageDepth,
-                        imageDx, imageDy, imageDz)
+function iterateOnBlocks(modelDirectory,
+                         imageHeight, imageWidth, imageDepth,
+                         imageDx, imageDy, imageDz,
+                         processFunction)
+  """
+  Simple function that iterates on blocks for executing
+  a task described by a processFunction
 
-  # Removing old models
-  files = readdir(modelDirectory)
-  toRemove = filter((s) -> contains(s, "model") == true, files)
-  for f in toRemove
-    rm(string(modelDirectory, "/", f))
+  modelDirectory: Directory containing models
+  imageHeight, imageWidth, imageDepth: Images sizes
+  imageDx, imageDy, imageDz: Sizes of cells grid
+  processFunction: Function that will be executed on a separate task on
+  the entire z-Block
+  """
+
+  beginImageStack = 0
+  endImage = beginImageStack
+
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 0:(imageDepth / imageDz - 1)
+    startImage = endImage
+    endImage = startImage + imageDz
+    task = @spawn processFunction(modelDirectory, startImage, endImage,
+                                  imageDx, imageDy,
+                                  imageWidth, imageHeight)
+    push!(tasks, task)
+  end
+
+  # Waiting for tasks
+  for task in tasks
+    wait(task)
   end
 end
 end
