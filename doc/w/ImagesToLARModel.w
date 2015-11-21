@@ -626,7 +626,7 @@ tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
 
 for j in 1:size(image3d[1],2)
   for i in 1:size(image3d[1],1)
-    tmp[i,j] = centroids[centers_idx[i,j] + 1]
+    tmp[i,j] = centroids[centers_idx[i,j]]
   end
 end
 
