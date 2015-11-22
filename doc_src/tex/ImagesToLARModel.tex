@@ -431,8 +431,17 @@ if(numberOfImages % 2 != 0)
   img = grayim(imArray)
   outputFilename = string(outputPath, "/", 
 		      outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
-  imwrite(img, outputFilename)
 end @}
+
+
+Fianlly we have to reduce noise on the image. The better choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
+
+@D Reduce noise
+@{# Denoising
+imArray = raw(img
+imArray = ndimage.median_filter(imArray, NOISE_SHAPE_DETECT) @}
+
+Where imArray is an array containing all raw data from images
 
 Finally this is the code for the entire function:
 
@@ -465,6 +474,10 @@ Finally this is the code for the entire function:
     imwrite(img, outputFilename)
 
     @< Search for best image @>
+    @< Reduce noise @>
+    
+    img = grayim(imArray)
+    imwrite(img, outputFilename)
 
   end
 
@@ -601,14 +614,6 @@ The \texttt{Images.jl} \texttt{raw} function, get all pixel values saving them i
    \label{fig:rawImage}
 \end{figure}
 
-Next we have to reduce noise on the image. The better choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
-
-@D Reduce noise
-@{# Denoising
-image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT) @}
-
-Where image3d is an array containing all raw data from images
-
 Finally we have to compute clusters obtaining images with only two values:
 
 @D Clustering images
@@ -671,10 +676,8 @@ This is the complete code:
 
   end
 
-  # Removing noise using a median filter and quantization
+  # Quantization
   for page in 1:length(image3d)
-
-    @< Reduce noise @>
 
     @< Clustering images @>
 

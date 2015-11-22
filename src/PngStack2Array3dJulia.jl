@@ -66,6 +66,12 @@ function convertImages(inputPath, outputPath, bestImage)
                                 imageNumber,".png")
     end
     imageNumber += 1 
+    # Denoising
+    imArray = raw(img
+    imArray = ndimage.median_filter(imArray, NOISE_SHAPE_DETECT) 
+    
+    img = grayim(imArray)
+    imwrite(img, outputFilename)
 
   end
 
@@ -86,7 +92,6 @@ function convertImages(inputPath, outputPath, bestImage)
     img = grayim(imArray)
     outputFilename = string(outputPath, "/", 
                         outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
-    imwrite(img, outputFilename)
   end 
 
   return newBestImage
@@ -173,11 +178,8 @@ function pngstack2array3d(path, minSlice, maxSlice, centroids)
 
   end
 
-  # Removing noise using a median filter and quantization
+  # Quantization
   for page in 1:length(image3d)
-
-    # Denoising
-    image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT) 
 
     # Image Quantization
     debug("page = ", page)
