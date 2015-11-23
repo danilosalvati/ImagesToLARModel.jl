@@ -67,7 +67,7 @@ function convertImages(inputPath, outputPath, bestImage)
     end
     imageNumber += 1 
     # Denoising
-    imArray = raw(img
+    imArray = raw(img)
     imArray = ndimage.median_filter(imArray, NOISE_SHAPE_DETECT) 
     
     img = grayim(imArray)

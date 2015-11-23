@@ -146,7 +146,7 @@ function removeDoubleVertices(V)
 
   orderedVerticesAndIndices = collect(zip(sort(V, lt = lessThanVertices),
                                           orderedIndices))
-  newVertices = Array(Array{Int}, 0)
+  newVertices = Array(Array{Float64}, 0)
   indices = zeros(Int, length(V))
   prevv = Nothing
   i = 1
@@ -203,16 +203,16 @@ function removeVerticesAndFacesFromBoundaries(V, FV)
   end
 
   # Creating an array of faces with explicit vertices
-  FV_vertices = Array(Array{Array{Int}}, 0)
+  FV_vertices = Array(Array{Array{Float64}}, 0)
 
   for i in 1 : length(FV_cleaned)
-    push!(FV_vertices, Array(Array{Int}, 0))
+    push!(FV_vertices, Array(Array{Float64}, 0))
     for vtx in FV_cleaned[i]
       push!(FV_vertices[i], newV[vtx])
     end
   end
 
-  V_final = Array(Array{Int}, 0)
+  V_final = Array(Array{Float64}, 0)
   FV_final = Array(Array{Int}, 0)
 
   # Saving only used vertices

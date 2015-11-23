@@ -2,7 +2,8 @@
 
 ## ImagesToLARModel
 
-- Implement a distributed algorithm for model smoothing
+- Make images conversion optional 
+- Add interfaces for other file types
 
 ## PngStack2Array3dJulia
 
@@ -16,9 +17,13 @@
 
 - Border Matrix Generation should be parallelized
 
-## ImagesConvertion
+## ImagesConversion
 
 - Every process takes a copy of the sparse  boundary matrix, try to use a shared array or something similar to reduce network communications
+- Create a real pipeline for conversion process and move code for merging block, removal of boundaries and smoothing from Model2Obj
+- Use a parameter for controlling number of smoothing iterations
+- Use a parameter for the image filter
+- Study Requires.jl and see if we can use a lazy load for python libraries
 
 ## Lar2Julia
 
@@ -27,10 +32,7 @@
 
 ## Model2Obj
 
-- When creating stl files we need all cubes or only "+1" oriented faces?
-- Add functions for removing double vertices and faces (it could be an iterative local removing)
-- Combine faces on same plane into a unique face
-- Remove coupling between file loading and double vertices and faces removing
+- Remove coupling between file loading and double vertices and faces removal
 
 ## Tests
 
@@ -47,5 +49,5 @@
 - Update architecture schema with new modules and functions
 - Add documentation for smoother
 - Add documentation for Model2Obj
-- Finish documentation for LArUtils
+- Finish documentation for LARUtils
 - Update documentation for Lar2Julia (conversion fom LAR list to sparse array)

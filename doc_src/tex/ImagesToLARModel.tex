@@ -438,7 +438,7 @@ Fianlly we have to reduce noise on the image. The better choice is using a \text
 
 @D Reduce noise
 @{# Denoising
-imArray = raw(img
+imArray = raw(img)
 imArray = ndimage.median_filter(imArray, NOISE_SHAPE_DETECT) @}
 
 Where imArray is an array containing all raw data from images
@@ -2049,7 +2049,7 @@ function removeDoubleVertices(V)
 
   orderedVerticesAndIndices = collect(zip(sort(V, lt = lessThanVertices),
                                           orderedIndices))
-  newVertices = Array(Array{Int}, 0)
+  newVertices = Array(Array{Float64}, 0)
   indices = zeros(Int, length(V))
   prevv = Nothing
   i = 1
@@ -2106,16 +2106,16 @@ function removeVerticesAndFacesFromBoundaries(V, FV)
   end
 
   # Creating an array of faces with explicit vertices
-  FV_vertices = Array(Array{Array{Int}}, 0)
+  FV_vertices = Array(Array{Array{Float64}}, 0)
 
   for i in 1 : length(FV_cleaned)
-    push!(FV_vertices, Array(Array{Int}, 0))
+    push!(FV_vertices, Array(Array{Float64}, 0))
     for vtx in FV_cleaned[i]
       push!(FV_vertices[i], newV[vtx])
     end
   end
 
-  V_final = Array(Array{Int}, 0)
+  V_final = Array(Array{Float64}, 0)
   FV_final = Array(Array{Int}, 0)
 
   # Saving only used vertices
@@ -2944,30 +2944,47 @@ function smoothBlocks(modelDirectory,
   Smoothes all blocks of the
   model
   """
-  iterations = 1
+  iterations = 3
   for i in 1:iterations
-    info("Smoothing iteration ", i)
+    info("Iteration ", i)
+
     iterateOnBlocks(modelDirectory,
                     imageHeight, imageWidth, imageDepth,
                     imageDx, imageDy, imageDz,
                     smoothBlocksProcess)
 
-    # Removing old models
-    files = readdir(modelDirectory)
-    toRemove = filter((s) -> contains(s, "model") == true, files)
-    for f in toRemove
-      rm(string(modelDirectory, "/", f))
+    function moveSmoothed(modelDirectory, startImage, endImage,
+                          imageDx, imageDy,
+                          imageWidth, imageHeight)
+
+      for xBlock in 0:(imageHeight / imageDx - 1)
+        for yBlock in 0:(imageWidth / imageDy - 1)
+
+          f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage, "_vtx.stl")
+          f_FV = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage, "_faces.stl")
+
+          if(isfile(f_V))
+            if VERSION >= v"0.4"
+              mv(f_V, replace(f_V, "smoothed", "model"), remove_destination = true)
+              mv(f_FV, replace(f_FV, "smoothed", "model"), remove_destination = true)
+            else
+              mv(f_V, replace(f_V, "smoothed", "model"))
+              mv(f_FV, replace(f_FV, "smoothed", "model"))
+            end
+
+          end
+        end
+      end
+
     end
 
-    # Rename smoothed files for next iterations
-    toMove = filter((s) -> contains(s, "smoothed") == true, files)
-    for f in toMove
-      mv(string(modelDirectory, "/", f), string(modelDirectory, "/", replace(f, "smoothed", "model")))
-    end
+    iterateOnBlocks(modelDirectory,
+                    imageHeight, imageWidth, imageDepth,
+                    imageDx, imageDy, imageDz,
+                    moveSmoothed)
   end
 
 end
-
 
 function iterateOnBlocks(modelDirectory,
                          imageHeight, imageWidth, imageDepth,
