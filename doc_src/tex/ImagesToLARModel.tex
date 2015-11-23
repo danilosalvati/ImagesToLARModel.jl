@@ -1918,6 +1918,84 @@ end @}
 
 \subsection{Removing double faces and vertices from boundaries}\label{sec:removeDoubleFacesAndVerticesFromBoundaries}
 
+In previous section, we have seen how to create a LAR model from the chain list. However this model contains all borders between blocks, while we are only interested in borders for the entire image. So, we will see functions for boundaries merging with removal of double faces and vertices from both sides.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/BoundaryMerge.png}
+   \caption{Removal of double faces from boundaries. (a) Two adjacent blocks (b) The same blocks exploded on x axis (c) Result of the removal on the exploded blocks}
+   \label{fig:boundaryMerge}
+\end{figure}
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/BoundaryMerge2.png}
+   \caption{Same as Figure~\ref{fig:boundaryMerge} with another model}
+   \label{fig:boundaryMerge2}
+\end{figure}
+
+The algorithm for the removal is very simply. First of all we need to remove double vertices from models in the usual way using \texttt{removeDoubleVertices} function and re-indexing all faces. Next we count all elements in re-indexed faces array removing elements with more than one occurrence and create an array of faces with an explicit representation of vertices (\textit{FV\_vertices}). Now we can safely remove double vertices on the other side of the boundary without losing the correct indexing in the faces. Finally we can create the final faces array with only remaining vertices comparing coordinates in \textit{FV\_vertices} with the ones in the last vertices array.\\
+Code for this function is the following:
+
+@D Removal of double vertices and faces from boundaries
+@{function removeVerticesAndFacesFromBoundaries(V, FV)
+  """
+  Remove vertices and faces duplicates on
+  boundaries models
+
+  V,FV: lar model of two merged boundaries
+  """
+
+  newV, indices = removeDoubleVertices(V)
+  uniqueIndices = unique(indices)
+
+  # Removing double faces on both boundaries
+  FV_reindexed = reindexVerticesInFaces(FV, indices, 0)
+  FV_unique = unique(FV_reindexed)
+
+  FV_cleaned = Array(Array{Int}, 0)
+  for f in FV_unique
+    if(count((x) -> x == f, FV_reindexed) == 1)
+      push!(FV_cleaned, f)
+    end
+  end
+
+  # Creating an array of faces with explicit vertices
+  FV_vertices = Array(Array{Array{Float64}}, 0)
+
+  for i in 1 : length(FV_cleaned)
+    push!(FV_vertices, Array(Array{Float64}, 0))
+    for vtx in FV_cleaned[i]
+      push!(FV_vertices[i], newV[vtx])
+    end
+  end
+
+  V_final = Array(Array{Float64}, 0)
+  FV_final = Array(Array{Int}, 0)
+
+  # Saving only used vertices
+  for face in FV_vertices
+    for vtx in face
+      push!(V_final, vtx)
+    end
+  end
+
+  V_final = unique(V_final)
+
+  # Renumbering FV
+  for face in FV_vertices
+    tmp = Array(Int, 0)
+    for vtx in face
+      ind = findfirst(V_final, vtx)
+      push!(tmp, ind)
+    end
+    push!(FV_final, tmp)
+  end
+
+  return V_final, FV_final
+end @}
+
+
 %===============================================================================
 \section{Smoother}\label{sec:Smoother}
 %===============================================================================

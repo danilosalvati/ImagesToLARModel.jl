@@ -140,7 +140,7 @@ In previous section we have seen how to create a Julia package for distribute ou
  \item \textbf{PngStack2Array3dJulia.jl}: it is responsible of images loading and conversion into computable data
  \item \textbf{Lar2Julia.jl}: it contains a small subset of LAR functions written in Julia language
  \item \textbf{LARUtils.jl}: it contains utility functions for manipulation of LAR models
- \item \textbf{Smoother.jl}: it contains function from smoothing LAR models
+ \item \textbf{Smoother.jl}: it contains function for smoothing of LAR models
  \item \textbf{Model2Obj.jl}: it contains function that manipulates obj files
  \item \textbf{larcc.py}: python larcc module for boundary computation. In next releases of the software it will be rewritten in Julia language
 \end{description}
@@ -431,8 +431,17 @@ if(numberOfImages % 2 != 0)
   img = grayim(imArray)
   outputFilename = string(outputPath, "/", 
 		      outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
-  imwrite(img, outputFilename)
 end @}
+
+
+Fianlly we have to reduce noise on the image. The better choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
+
+@D Reduce noise
+@{# Denoising
+imArray = raw(img)
+imArray = ndimage.median_filter(imArray, NOISE_SHAPE_DETECT) @}
+
+Where imArray is an array containing all raw data from images
 
 Finally this is the code for the entire function:
 
@@ -465,6 +474,10 @@ Finally this is the code for the entire function:
     imwrite(img, outputFilename)
 
     @< Search for best image @>
+    @< Reduce noise @>
+    
+    img = grayim(imArray)
+    imwrite(img, outputFilename)
 
   end
 
@@ -601,14 +614,6 @@ The \texttt{Images.jl} \texttt{raw} function, get all pixel values saving them i
    \label{fig:rawImage}
 \end{figure}
 
-Next we have to reduce noise on the image. The better choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
-
-@D Reduce noise
-@{# Denoising
-image3d[page] = ndimage.median_filter(image3d[page], NOISE_SHAPE_DETECT) @}
-
-Where image3d is an array containing all raw data from images
-
 Finally we have to compute clusters obtaining images with only two values:
 
 @D Clustering images
@@ -626,7 +631,7 @@ tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
 
 for j in 1:size(image3d[1],2)
   for i in 1:size(image3d[1],1)
-    tmp[i,j] = centroids[centers_idx[i,j] + 1]
+    tmp[i,j] = centroids[centers_idx[i,j]]
   end
 end
 
@@ -671,10 +676,8 @@ This is the complete code:
 
   end
 
-  # Removing noise using a median filter and quantization
+  # Quantization
   for page in 1:length(image3d)
-
-    @< Reduce noise @>
 
     @< Clustering images @>
 
@@ -1140,7 +1143,7 @@ end @}
 
 \subsection{Write border matrix on file}\label{sec:writeBorderMatrix}
 
-We have already seen that for performance reasons border operator matrix is saved on file; here we will see code used for this scope. Firstly, we have defined a function \texttt{writeBorder}, which takes as parameters a \texttt{PyObject} containing a matrix (computed in subsection~\ref{sec:computeBorder}) and the outuput file path.
+We have already seen that for performance reasons border operator matrix is saved on file; here we will see code used for this scope. Firstly, we have defined a function \texttt{writeBorder}, which takes as parameters a \texttt{PyObject} containing a matrix (computed in subsection~\ref{sec:computeBorder}) and the output file path. When porting of \texttt{larcc} library will be completed, code for conversion of python csr matrix into csc julia matrix will not be necessary.
 
 @D write Border matrix
 @{function writeBorder(boundaryMatrix, outputFile)
@@ -1366,8 +1369,6 @@ These are modules used in \texttt{LARUtils} and the functions exported
 
 @D modules import LARUtils
 @{using Logging
-
-import Lar2julia
 
 export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
     computeModel, computeModelAndBoundaries
@@ -1856,7 +1857,6 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
   vertex_count_front = 1
   vertex_count_back = 1
 
-  #b2cells = Lar2Julia.cscChainToCellList(objectBoundaryChain)
   # Get all cells (independently from orientation)
   b2cells = findn(objectBoundaryChain)[1]
 
@@ -1917,6 +1917,87 @@ end @}
 \end{figure}
 
 \subsection{Removing double faces and vertices from boundaries}\label{sec:removeDoubleFacesAndVerticesFromBoundaries}
+
+In previous section, we have seen how to create a LAR model from the chain list. However this model contains all borders between blocks, while we are only interested in borders for the entire image. So, we will see functions for boundaries merging with removal of double faces and vertices from both sides.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/BoundaryMerge.png}
+   \caption{Removal of double faces from boundaries. (a) Two adjacent blocks (b) The same blocks exploded on x axis (c) Result of the removal on the exploded blocks}
+   \label{fig:boundaryMerge}
+\end{figure}
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/BoundaryMerge2.png}
+   \caption{Same as Figure~\ref{fig:boundaryMerge} with another model}
+   \label{fig:boundaryMerge2}
+\end{figure}
+
+The algorithm for the removal is very simply. First of all we need to remove double vertices from models in the usual way using \texttt{removeDoubleVertices} function and reindex a
+
+@D Removal of double vertices and faces from boundaries
+@{function removeVerticesAndFacesFromBoundaries(V, FV)
+  """
+  Remove vertices and faces duplicates on
+  boundaries models
+
+  V,FV: lar model of two merged boundaries
+  """
+
+  newV, indices = removeDoubleVertices(V)
+  uniqueIndices = unique(indices)
+
+  # Removing double faces on both boundaries
+  FV_reindexed = reindexVerticesInFaces(FV, indices, 0)
+  FV_unique = unique(FV_reindexed)
+
+  FV_cleaned = Array(Array{Int}, 0)
+  for f in FV_unique
+    if(count((x) -> x == f, FV_reindexed) == 1)
+      push!(FV_cleaned, f)
+    end
+  end
+
+  # Creating an array of faces with explicit vertices
+  FV_vertices = Array(Array{Array{Float64}}, 0)
+
+  for i in 1 : length(FV_cleaned)
+    push!(FV_vertices, Array(Array{Float64}, 0))
+    for vtx in FV_cleaned[i]
+      push!(FV_vertices[i], newV[vtx])
+    end
+  end
+
+  V_final = Array(Array{Float64}, 0)
+  FV_final = Array(Array{Int}, 0)
+
+  # Saving only used vertices
+  for face in FV_vertices
+    for vtx in face
+      push!(V_final, vtx)
+    end
+  end
+
+  V_final = unique(V_final)
+
+  # Renumbering FV
+  for face in FV_vertices
+    tmp = Array(Int, 0)
+    for vtx in face
+      ind = findfirst(V_final, vtx)
+      push!(tmp, ind)
+    end
+    push!(FV_final, tmp)
+  end
+
+  return V_final, FV_final
+end @}
+
+
+%===============================================================================
+\section{Smoother}\label{sec:Smoother}
+%===============================================================================
 
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
@@ -2045,7 +2126,7 @@ function removeDoubleVertices(V)
 
   orderedVerticesAndIndices = collect(zip(sort(V, lt = lessThanVertices),
                                           orderedIndices))
-  newVertices = Array(Array{Int}, 0)
+  newVertices = Array(Array{Float64}, 0)
   indices = zeros(Int, length(V))
   prevv = Nothing
   i = 1
@@ -2102,16 +2183,16 @@ function removeVerticesAndFacesFromBoundaries(V, FV)
   end
 
   # Creating an array of faces with explicit vertices
-  FV_vertices = Array(Array{Array{Int}}, 0)
+  FV_vertices = Array(Array{Array{Float64}}, 0)
 
   for i in 1 : length(FV_cleaned)
-    push!(FV_vertices, Array(Array{Int}, 0))
+    push!(FV_vertices, Array(Array{Float64}, 0))
     for vtx in FV_cleaned[i]
       push!(FV_vertices[i], newV[vtx])
     end
   end
 
-  V_final = Array(Array{Int}, 0)
+  V_final = Array(Array{Float64}, 0)
   FV_final = Array(Array{Int}, 0)
 
   # Saving only used vertices
@@ -2379,7 +2460,7 @@ end
 @{module Model2Obj
 
 import LARUtils
-import Smoothing
+import Smoother
 
 using Logging
 
@@ -2612,7 +2693,7 @@ function mergeObjHelper(vertices_files, faces_files)
   end
 
   # Merging last vertices files
-  task = @spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
+  task = @@spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
   push!(tasks, task)
   #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end]))
 
@@ -2627,7 +2708,7 @@ function mergeObjHelper(vertices_files, faces_files)
   tasks = Array(RemoteRef, 0)
   for i in 1 : length(taskArray) - 1
 
-    task = @spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
+    task = @@spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
                                     numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
 
@@ -2694,7 +2775,7 @@ function getModelsFromFiles(arrayV, arrayFV)
   arrayFV: Array containing all faces files
   """
 
-  V = Array(Array{Int}, 0)
+  V = Array(Array{Float64}, 0)
   FV = Array(Array{Int}, 0)
   offset = 0
 
@@ -2791,7 +2872,7 @@ function mergeBlocksProcess(modelDirectory, startImage, endImage,
       end
 
       writeToObj(V, FV, string(modelDirectory, "/model_output_",
-                                     xBlock, "-", yBlock, "_", startImage, "_", endImage))
+                               xBlock, "-", yBlock, "_", startImage, "_", endImage))
     end
   end
 end
@@ -2819,7 +2900,7 @@ function mergeBoundariesProcess(modelDirectory, startImage, endImage,
 
       # Merging top boundary
       firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-      secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + 2)
+      secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock, "_", endImage, "_", endImage + (endImage - startImage))
       mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 
       # Merging front boundary
@@ -2845,23 +2926,10 @@ function mergeBoundaries(modelDirectory,
   imageDx, imageDy, imageDz: sizes of cells grid
   """
 
-  beginImageStack = 0
-  endImage = beginImageStack
-
-  tasks = Array(RemoteRef, 0)
-  for zBlock in 0:(imageDepth / imageDz - 1)
-    startImage = endImage
-    endImage = startImage + imageDz
-    task = @@spawn mergeBoundariesProcess(modelDirectory, startImage, endImage,
-                                         imageDx, imageDy,
-                                         imageWidth, imageHeight)
-    push!(tasks, task)
-  end
-
-  # Waiting for tasks
-  for task in tasks
-    wait(task)
-  end
+  iterateOnBlocks(modelDirectory,
+                  imageHeight, imageWidth, imageDepth,
+                  imageDx, imageDy, imageDz,
+                  mergeBoundariesProcess)
 end
 
 function mergeBlocks(modelDirectory,
@@ -2876,26 +2944,10 @@ function mergeBlocks(modelDirectory,
   imageDx, imageDy, imageDz: sizes of cells grid
   """
 
-  beginImageStack = 0
-  endImage = beginImageStack
-
-  tasks = Array(RemoteRef, 0)
-  for zBlock in 0:(imageDepth / imageDz - 1)
-    startImage = endImage
-    endImage = startImage + imageDz
-    task = @@spawn mergeBlocksProcess(modelDirectory, startImage, endImage,
-                                     imageDx, imageDy,
-                                     imageWidth, imageHeight)
-    push!(tasks, task)
-    #=mergeBlocksProcess(modelDirectory, startImage, endImage,
-                                     imageDx, imageDy,
-                                     imageWidth, imageHeight)=#
-  end
-
-  # Waiting for tasks
-  for task in tasks
-    wait(task)
-  end
+  iterateOnBlocks(modelDirectory,
+                  imageHeight, imageWidth, imageDepth,
+                  imageDx, imageDy, imageDz,
+                  mergeBlocksProcess)
 end
 
 function smoothBlocksProcess(modelDirectory, startImage, endImage,
@@ -2923,121 +2975,17 @@ function smoothBlocksProcess(modelDirectory, startImage, endImage,
         blockModelV, blockModelFV = getModelsFromFiles([blockFileV], [blockFileFV])
 
         # Loading a unique model from this block and its adjacents
-        modelsFilesV = [string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", startImage, "_",
-                               endImage, "_vtx.stl"),
+        modelsFiles = Array(String, 0)
+        for x in xBlock - 1:xBlock + 1
+          for y in yBlock - 1:yBlock + 1
+            for z in range(startImage - (endImage - startImage),(endImage - startImage), 3)
+              push!(modelsFiles, string(modelDirectory, "/model_output_", x, "-", y, "_", z, "_", z + (endImage - startImage)))
+            end
+          end
+        end
 
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", endImage, "_",
-                               endImage + (endImage - startImage), "_vtx.stl"),
-
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl"),
-                        string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                               startImage, "_vtx.stl")]
-
-        modelsFilesFV = [string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", startImage, "_",
-                                endImage, "_faces.stl"),
-
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", endImage, "_",
-                                endImage + (endImage - startImage), "_faces.stl"),
-
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock + 1, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock + 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl"),
-                         string(modelDirectory, "/model_output_", xBlock - 1, "-", yBlock - 1, "_", startImage - (endImage - startImage), "_",
-                                startImage, "_faces.stl")]
-
-
+        modelsFilesV = map((s) -> string(s, "_vtx.stl"), modelsFiles)
+        modelsFilesFV = map((s) -> string(s, "_faces.stl"), modelsFiles)
 
         modelV, modelFV = getModelsFromFiles(modelsFilesV, modelsFilesFV)
 
@@ -3059,44 +3007,11 @@ function smoothBlocksProcess(modelDirectory, startImage, endImage,
             push!(V_final, V_sm[i])
           end
           outputFilename = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage)
-          #warn("V_final", V_final)
-          #info("FV_final", blockModelFV)
           writeToObj(V_final, blockModelFV, outputFilename)
         end
       end
     end
   end
-end
-
-function smoothBlocksIteration(modelDirectory,
-                               imageHeight, imageWidth, imageDepth,
-                               imageDx, imageDy, imageDz)
-  """
-  A single iteration of blocks smoothing
-
-  modelDirectory: path of the directory containing the models
-  imageHeight, imageWidth, imageDepth: sizes of the images
-  imageDx, imageDy, imageDz: sizes of the grid
-  """
-  beginImageStack = 0
-  endImage = beginImageStack
-
-  tasks = Array(RemoteRef, 0)
-  for zBlock in 0:(imageDepth / imageDz - 1)
-    startImage = endImage
-    endImage = startImage + imageDz
-    task = @@spawn smoothBlocksProcess(modelDirectory, startImage, endImage,
-                                      imageDx, imageDy,
-                                      imageWidth, imageHeight)
-    push!(tasks, task)
-  end
-
-  # Waiting for tasks
-  for task in tasks
-    wait(task)
-  end
-
-
 end
 
 function smoothBlocks(modelDirectory,
@@ -3106,17 +3021,79 @@ function smoothBlocks(modelDirectory,
   Smoothes all blocks of the
   model
   """
+  iterations = 3
+  for i in 1:iterations
+    info("Iteration ", i)
 
+    iterateOnBlocks(modelDirectory,
+                    imageHeight, imageWidth, imageDepth,
+                    imageDx, imageDy, imageDz,
+                    smoothBlocksProcess)
 
-  smoothBlocksIteration(modelDirectory,
-                        imageHeight, imageWidth, imageDepth,
-                        imageDx, imageDy, imageDz)
+    function moveSmoothed(modelDirectory, startImage, endImage,
+                          imageDx, imageDy,
+                          imageWidth, imageHeight)
 
-  # Removing old models
-  files = readdir(modelDirectory)
-  toRemove = filter((s) -> contains(s, "model") == true, files)
-  for f in toRemove
-    rm(string(modelDirectory, "/", f))
+      for xBlock in 0:(imageHeight / imageDx - 1)
+        for yBlock in 0:(imageWidth / imageDy - 1)
+
+          f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage, "_vtx.stl")
+          f_FV = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_", startImage, "_", endImage, "_faces.stl")
+
+          if(isfile(f_V))
+            if VERSION >= v"0.4"
+              mv(f_V, replace(f_V, "smoothed", "model"), remove_destination = true)
+              mv(f_FV, replace(f_FV, "smoothed", "model"), remove_destination = true)
+            else
+              mv(f_V, replace(f_V, "smoothed", "model"))
+              mv(f_FV, replace(f_FV, "smoothed", "model"))
+            end
+
+          end
+        end
+      end
+
+    end
+
+    iterateOnBlocks(modelDirectory,
+                    imageHeight, imageWidth, imageDepth,
+                    imageDx, imageDy, imageDz,
+                    moveSmoothed)
+  end
+
+end
+
+function iterateOnBlocks(modelDirectory,
+                         imageHeight, imageWidth, imageDepth,
+                         imageDx, imageDy, imageDz,
+                         processFunction)
+  """
+  Simple function that iterates on blocks for executing
+  a task described by a processFunction
+
+  modelDirectory: Directory containing models
+  imageHeight, imageWidth, imageDepth: Images sizes
+  imageDx, imageDy, imageDz: Sizes of cells grid
+  processFunction: Function that will be executed on a separate task on
+  the entire z-Block
+  """
+
+  beginImageStack = 0
+  endImage = beginImageStack
+
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 0:(imageDepth / imageDz - 1)
+    startImage = endImage
+    endImage = startImage + imageDz
+    task = @@spawn processFunction(modelDirectory, startImage, endImage,
+                                  imageDx, imageDy,
+                                  imageWidth, imageHeight)
+    push!(tasks, task)
+  end
+
+  # Waiting for tasks
+  for task in tasks
+    wait(task)
   end
 end
 end
@@ -3163,24 +3140,21 @@ function adjVerts(V, FV)
     if length(row) == 0
       push!(row, i)
     end
-    push!(VV, [unique(row)])
+    push!(VV, collect(unique(row)))
   end
   return VV
 end
 
-
-
-function makeSingleIterationSmoothing(V, VV)
+function smoothModel(V, FV)
   """
-  Execute a single iteration of a laplacian
-  smoothing on a LAR model
+  Execute a Laplacian smoothing on a LAR model returning
+  the new smoothed model
 
-  V: array of vertices of the LAR model
-  VV: Array containing adjacent vertices of the LAR model
-
-  return the modified array of vertices
+  V, FV: LAR model
   """
-  V1 = Array(Array{Float64},0)
+
+  VV = adjVerts(V, FV)
+  newV = Array(Array{Float64},0)
   V_temp = Array(Array{Float64},0)
 
   for i in 1:length(VV)
@@ -3198,26 +3172,8 @@ function makeSingleIterationSmoothing(V, VV)
     end
 
     # Computing convex combination of vertices
-    push!(V1, sum/length(adjs))
+    push!(newV, sum/length(adjs))
 
-  end
-  return V1
-end
-
-function smoothModel(V, FV)
-  """
-  Execute a Laplacian smoothing on a LAR model returning
-  the new smoothed model
-
-  V, FV: LAR model
-  """
-  VV = adjVerts(V, FV)
-  # Execute several iterations of the smoothing algorithm
-  iterations = 1 # Probably this is not the better place for this
-
-  newV = V
-  for i in 1:iterations
-    newV = makeSingleIterationSmoothing(newV, VV)
   end
 
   return newV, FV
