@@ -1999,12 +1999,120 @@ end @}
 %===============================================================================
 \section{Smoother}\label{sec:Smoother}
 %===============================================================================
+This module contains functions used for smoothing LAR models
+
+\subsection{Get adjacent vertices}\label{sec:adjacent}
+
+As we will see in next subsection, for executing a smoothing algorithm we need to know adjacent vertices to a given one. So we need a \textit{VV relationship}, where for every vertex index \textit{i}, we have a list of adjacent vertices.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/Adjacents.png}
+   \caption{\textit{VV relationship} for a simple model}
+   \label{fig:adjacents}
+\end{figure}
+
+Algorithm is very simple and exploit the following property: \textit{for triangular faces all vertices are linked together}. So we just need to search for every vertex \textit{i} all faces that contain it and add all their vertices to a list. \textit{VV} will contain a concatenation of all these lists
+
+@D get adjacent vertices
+@{function adjVerts(V, FV)
+  """
+  Compute the adjacency graph of vertices
+  of a LAR model
+
+  V, FV: LAR model
+
+  Returns the list of indices of vertices adjacent
+  to a vertex
+  """
+  VV = Array{Int}[]
+  for i in 1:length(V)
+    row = Array(Int, 0)
+    for face in FV
+      if i in face
+        for v in face
+          push!(row, v)
+        end
+      end
+    end
+    if length(row) == 0
+      push!(row, i)
+    end
+    push!(VV, collect(unique(row)))
+  end
+  return VV
+end @}
+
+\subsection{Laplacian smoothing}\label{sec:smoothing}
+
+There are many different algorithms for mesh smoothing. The simpler and the one we used in this library is \textbf{laplacian smoothing}. For each vertex in a mesh, a new position is chosen according to local information (such as the coordinates of neighbors) and the vertex is moved there. If that mesh is topologically a rectangular grid (so each internal vertex is connected to four neighbors) then this operation produces the \textit{Laplacian} of the mesh.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.60\linewidth]{images/LaplacianSmoothing.png}
+   \caption{Laplacian smoothing (picture taken from the \textit{Geometry Processing Algorithms} course at Stanford University)}
+   \label{fig:laplacianSmoothing}
+\end{figure}
+
+As we can see from Figure~\ref{fig:laplacianSmoothing}, with substitution of every vertex position with the mean of the neighbors positions, we can obtain a curve with smoothed edges. This procedure can be repeated many times, so we can obtain a smoother model. For example, in Figure~\ref{fig:smoothingExample}, we can see this algorithm applied on a sample mesh with three iterations.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.30\linewidth]{images/SmoothingExample0.png}
+   \includegraphics[width=0.30\linewidth]{images/SmoothingExample1.png}
+   \caption{Laplacian smoothing for a sample mesh. (a) Original mesh (b) Mesh after three iterations of the smoothing algorithm (picture taken from a \textit{Digital Geometry Processing} course at IMPA)}
+   \label{fig:smoothingExample}
+\end{figure}
+
+This is the code for the smoothing function; it takes a single LAR model and returns the smoothed model. 
+
+@D laplacian smoothing
+@{function smoothModel(V, FV)
+  """
+  Execute a Laplacian smoothing on a LAR model returning
+  the new smoothed model
+
+  V, FV: LAR model
+  """
+
+  VV = adjVerts(V, FV)
+  newV = Array(Array{Float64},0)
+  V_temp = Array(Array{Float64},0)
+
+  for i in 1:length(VV)
+    adjs = VV[i]
+    # Get all coordinates for adjacent vertices
+    coords = Array(Array{Float64}, 0)
+    for v in adjs
+      push!(coords, V[v])
+    end
+
+    # Computing sum of all vectors
+    sum = [0.0, 0.0, 0.0]
+    for v in coords
+      sum += v
+    end
+
+    # Computing convex combination of vertices
+    push!(newV, sum/length(adjs))
+
+  end
+
+  return newV, FV
+end @}
+
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/ModelSmoothing0.png}
+   \includegraphics[width=0.40\linewidth]{images/ModelSmoothing1.png}
+   \caption{Smoothing of a sample model made with ImagesToLARModel}
+   \label{fig:smoothingExample}
+\end{figure}
 
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================
-
-%-------------------------------------------------------------------------------
 
 %===============================================================================
 \section{Exporting the library}
@@ -2755,67 +2863,9 @@ end
 @O src/Smoother.jl
 @{module Smoother
 
-function adjVerts(V, FV)
-  """
-  Compute the adjacency graph of vertices
-  of a LAR model
+@< get adjacent vertices @>
 
-  V, FV: LAR model
-
-  Returns the list of indices of vertices adjacent
-  to a vertex
-  """
-  VV = Array{Int}[]
-  for i in 1:length(V)
-    row = Array(Int, 0)
-    for face in FV
-      if i in face
-        for v in face
-          push!(row, v)
-        end
-      end
-    end
-    if length(row) == 0
-      push!(row, i)
-    end
-    push!(VV, collect(unique(row)))
-  end
-  return VV
-end
-
-function smoothModel(V, FV)
-  """
-  Execute a Laplacian smoothing on a LAR model returning
-  the new smoothed model
-
-  V, FV: LAR model
-  """
-
-  VV = adjVerts(V, FV)
-  newV = Array(Array{Float64},0)
-  V_temp = Array(Array{Float64},0)
-
-  for i in 1:length(VV)
-    adjs = VV[i]
-    # Get all coordinates for adjacent vertices
-    coords = Array(Array{Float64}, 0)
-    for v in adjs
-      push!(coords, V[v])
-    end
-
-    # Computing sum of all vectors
-    sum = [0.0, 0.0, 0.0]
-    for v in coords
-      sum += v
-    end
-
-    # Computing convex combination of vertices
-    push!(newV, sum/length(adjs))
-
-  end
-
-  return newV, FV
-end
+@< laplacian smoothing @>
 end
 @}
 

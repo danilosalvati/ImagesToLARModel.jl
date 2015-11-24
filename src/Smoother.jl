@@ -26,7 +26,7 @@ function adjVerts(V, FV)
     push!(VV, collect(unique(row)))
   end
   return VV
-end
+end 
 
 function smoothModel(V, FV)
   """
@@ -60,5 +60,5 @@ function smoothModel(V, FV)
   end
 
   return newV, FV
-end
+end 
 end
