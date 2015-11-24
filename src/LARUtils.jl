@@ -115,7 +115,7 @@ function lessThanVertices(v1, v2)
     return v1[2] < v2[2]
   end
   return v1[1] < v2[1]
-end
+end 
 
 function removeDoubleVerticesAndFaces(V, FV, facesOffset)
   """
@@ -161,7 +161,7 @@ function removeDoubleVertices(V)
     end
   end
   return newVertices, indices
-end
+end 
 
 function reindexVerticesInFaces(FV, indices, offset)
   """
@@ -178,7 +178,7 @@ function reindexVerticesInFaces(FV, indices, offset)
     end
   end
   return FV
-end
+end  
 
 function removeVerticesAndFacesFromBoundaries(V, FV)
   """
@@ -235,52 +235,7 @@ function removeVerticesAndFacesFromBoundaries(V, FV)
   end
 
   return V_final, FV_final
-end
-
-function computeModel(imageDx, imageDy, imageDz,
-                      xStart, yStart, zStart,
-                      facesOffset, objectBoundaryChain)
-  """
-  Takes the boundary chain of a part of the entire model
-  and returns a LAR model
-
-  imageDx, imageDy, imageDz: Boundary dimensions
-  xStart, yStart, zStart: Offset of this part of the model
-  facesOffset: Offset for the faces
-  objectBoundaryChain: Sparse csc matrix containing the cells
-  """
-
-  V, bases = getBases(imageDx, imageDy, imageDz)
-  FV = bases[3]
-
-  V_model = Array(Array{Int}, 0)
-  FV_model = Array(Array{Int}, 0)
-
-  vertex_count = 1
-
-  #b2cells = Lar2Julia.cscChainToCellList(objectBoundaryChain)
-  # Get all cells (independently from orientation)
-  b2cells = findn(objectBoundaryChain)[1]
-
-  debug("b2cells = ", b2cells)
-
-  for f in b2cells
-    old_vertex_count = vertex_count
-    for vtx in FV[f]
-      push!(V_model, [convert(Int, V[vtx + 1][1] + xStart),
-                    convert(Int, V[vtx + 1][2] + yStart),
-                    convert(Int, V[vtx + 1][3] + zStart)])
-      vertex_count += 1
-    end
-
-    push!(FV_model, [old_vertex_count + facesOffset, old_vertex_count + 1 + facesOffset, old_vertex_count + 3 + facesOffset])
-    push!(FV_model, [old_vertex_count + facesOffset, old_vertex_count + 3 + facesOffset, old_vertex_count + 2 + facesOffset])
-  end
-
-  # Removing double vertices
-  return removeDoubleVerticesAndFaces(V_model, FV_model, facesOffset)
-
-end
+end 
 
 function isOnLeft(face, V, nx, ny, nz)
   """
@@ -360,7 +315,7 @@ function isOnBack(face, V, nx, ny, nz)
     end
   end
   return true
-end
+end 
 
 function computeModelAndBoundaries(imageDx, imageDy, imageDz,
                       xStart, yStart, zStart,
@@ -394,11 +349,8 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
     push!(FV, [vertex_count, vertex_count + 3, vertex_count + 2])
 
     return new_vertex_count
-  end
-
-  V, bases = getBases(imageDx, imageDy, imageDz)
-  FV = bases[3]
-
+  end 
+  
   V_model = Array(Array{Int}, 0)
   FV_model = Array(Array{Int}, 0)
 
@@ -418,7 +370,10 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
   FV_front = Array(Array{Int},0)
 
   V_back = Array(Array{Int},0)
-  FV_back = Array(Array{Int},0)
+  FV_back = Array(Array{Int},0) 
+
+  V, bases = getBases(imageDx, imageDy, imageDz)
+  FV = bases[3]
 
   vertex_count_model = 1
   vertex_count_left = 1
@@ -428,7 +383,6 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
   vertex_count_front = 1
   vertex_count_back = 1
 
-  #b2cells = Lar2Julia.cscChainToCellList(objectBoundaryChain)
   # Get all cells (independently from orientation)
   b2cells = findn(objectBoundaryChain)[1]
 
@@ -445,19 +399,26 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
 
     # Choosing the right model for vertex
     if(isOnLeft(FV[f], V, imageDx, imageDy, imageDz))
-      vertex_count_left = addFaceToModel(V, FV, V_left, FV_left, f, old_vertex_count_left)
+      vertex_count_left = addFaceToModel(V, FV, V_left, FV_left,
+                                  f, old_vertex_count_left)
     elseif(isOnRight(FV[f], V, imageDx, imageDy, imageDz))
-      vertex_count_right = addFaceToModel(V, FV, V_right, FV_right, f, old_vertex_count_right)
+      vertex_count_right = addFaceToModel(V, FV, V_right, FV_right,
+                                  f, old_vertex_count_right)
     elseif(isOnTop(FV[f], V, imageDx, imageDy, imageDz))
-      vertex_count_top = addFaceToModel(V, FV, V_top, FV_top, f, old_vertex_count_top)
+      vertex_count_top = addFaceToModel(V, FV, V_top, FV_top,
+                                  f, old_vertex_count_top)
     elseif(isOnBottom(FV[f], V, imageDx, imageDy, imageDz))
-      vertex_count_bottom = addFaceToModel(V, FV, V_bottom, FV_bottom, f, old_vertex_count_bottom)
+      vertex_count_bottom = addFaceToModel(V, FV, V_bottom, FV_bottom,
+                                  f, old_vertex_count_bottom)
     elseif(isOnFront(FV[f], V, imageDx, imageDy, imageDz))
-      vertex_count_front = addFaceToModel(V, FV, V_front, FV_front, f, old_vertex_count_front)
+      vertex_count_front = addFaceToModel(V, FV, V_front, FV_front,
+                                  f, old_vertex_count_front)
     elseif(isOnBack(FV[f], V, imageDx, imageDy, imageDz))
-      vertex_count_back = addFaceToModel(V, FV, V_back, FV_back, f, old_vertex_count_back)
+      vertex_count_back = addFaceToModel(V, FV, V_back, FV_back,
+                                  f, old_vertex_count_back)
     else
-      vertex_count_model = addFaceToModel(V, FV, V_model, FV_model, f, old_vertex_count_model)
+      vertex_count_model = addFaceToModel(V, FV, V_model, FV_model,
+                                  f, old_vertex_count_model)
     end
 
   end
@@ -470,5 +431,5 @@ function computeModelAndBoundaries(imageDx, imageDy, imageDz,
   [removeDoubleVerticesAndFaces(V_bottom, FV_bottom, 0)],
   [removeDoubleVerticesAndFaces(V_front, FV_front, 0)],
   [removeDoubleVerticesAndFaces(V_back, FV_back, 0)]
-end
+end 
 end
