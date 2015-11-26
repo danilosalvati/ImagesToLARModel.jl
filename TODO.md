@@ -19,10 +19,10 @@
 
 ## ImagesConversion
 
+- I need a check for non-existing best images
 - Every process takes a copy of the sparse  boundary matrix, try to use a shared array or something similar to reduce network communications
-- Create a real pipeline for conversion process and move code for merging block, removal of boundaries and smoothing from Model2Obj
 - Use a parameter for controlling number of smoothing iterations
-- Use a parameter for the image filter
+- Use a parameter for image filtering
 - Study Requires.jl and see if we can use a lazy load for python libraries
 
 ## Lar2Julia
@@ -47,7 +47,5 @@
 ## Documentation
 
 - Update architecture schema with new modules and functions
-- Add documentation for smoother
 - Add documentation for Model2Obj
-- Finish documentation for LARUtils
-- Update documentation for Lar2Julia (conversion fom LAR list to sparse array)
+- Update documentation for Lar2Julia (conversion from LAR list to sparse array)

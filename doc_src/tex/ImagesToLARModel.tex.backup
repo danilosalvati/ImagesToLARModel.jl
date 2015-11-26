@@ -692,7 +692,7 @@ end
 %===============================================================================
 Now we will study the most important module for this package: \texttt{ImagesConversion}. It has the responsibility of doing the entire conversion process delegating tasks to the other modules.
 
-\subsection{General algorithm}
+\subsection{General algorithm}\label{sec:generalAlgorithm}
 
 Now we will examine, in a general way, the algorithm used for conversion from a two-dimensional to a three-dimensional representation of our biomedical models.\\
 We have already seen in section~\ref{sec:PngStack2Array3dJulia} how to get information from a png image, obtaining arrays with only two values; one for the \textbf{background} color and one for \textbf{foreground} color. This is only the first step of the complete conversion process.\\
@@ -791,9 +791,78 @@ Finally we can start conversion with all these parameters calling \texttt{startI
 end
 @}
 
-\subsection{Images conversion}\label{sec:imagesconversion}
+\subsection{Conversion pipeline}\label{sec:conversionpipeline}
 
-Now we can see how conversion of images works. First of all we compute the centroids from the best image using module \texttt{PngStack2Array3dJulia} and then get the previously computed border matrix in csc sparse array format
+Now we can see how conversion of images works. In section~\ref{sec:generalAlgorithm} we have seen how to execute the single conversion of a pixel into a voxel using our grid for parallel computation. However, with that algorithm, we obtain models with internal boundaries between blocks and with squared edge. So we need to create a \textbf{conversion pipeline} which will progressively refine our models. In Figure~\ref{fig:Pipeline} there are the steps used for our conversion
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=1.10\linewidth]{images/Pipeline.png}
+   \caption{Images conversion pipeline}
+   \label{fig:Pipeline}
+\end{figure}
+
+Every single step of the pipeline, is executed in parallel for every block of the grid; so we need a general purpose function for blocks iteration which will take as a parameter a function that will execute it. So we can define the \texttt{iterateOnBlocks} function which takes the following parameters:
+\begin{itemize}
+ \item \textbf{inputDirectory}: Directory which contains input files for the process function
+ \item \textbf{imageHeight, imageWidth, imageDepth}: Sizes of the stack of images
+ \item \textbf{imageDx, imageDy, imageDz}: Sizes of the grid
+ \item \textbf{processFunction}: Function that contains instructions for execution of a single step of the pipeline for a single block
+ \item \textbf{outputDirectory}: Directory which will contains the output
+ \item \textbf{centroids}: Centroids from the best image
+ \item \textbf{boundaryMat}: Boundary operator for the chosen grid
+\end{itemize}
+
+This function will iterate on all blocks of the image grid executing the process function, which will be different for every pipeline step. This is the code used:
+
+@D parallel block iteration
+@{function iterateOnBlocks(inputDirectory,
+                         imageHeight, imageWidth, imageDepth,
+                         imageDx, imageDy, imageDz,
+                         processFunction, outputDirectory,
+                         boundaryMat, centroidsCalc)
+  """
+  Simple function that iterates on blocks for executing
+  a task described by a processFunction
+
+  inputDirectory: Directory which contains input files for the process function
+  imageHeight, imageWidth, imageDepth: Images sizes
+  imageDx, imageDy, imageDz: Sizes of cells grid
+  processFunction: Function that will be executed on a separate task on
+  the entire z-Block
+  outputDirectory: Directory which will contains the output
+  centroids: Centroids from the best image
+  boundaryMat: Boundary operator for the chosen grid
+  """
+
+  beginImageStack = 0
+  endImage = beginImageStack
+
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 0:(imageDepth / imageDz - 1)
+    startImage = endImage
+    endImage = startImage + imageDz
+    task = @@spawn processFunction(inputDirectory, outputDirectory,
+				   startImage, endImage,
+                                   imageDx, imageDy, imageDz,
+                                   imageWidth, imageHeight,
+                                   centroidsCalc, boundaryMat)                                  
+    push!(tasks, task)
+  end
+
+  # Waiting for tasks
+  for task in tasks
+    wait(task)
+  end
+end @}
+
+
+First of all we need to iterate on the grid finding the zBlock coordinate; we saw earlier that the \textit{imageDz} parameter must be a divisor of the image depth, so we will have exactly \textit{imageDepth/imageDz} blocks on the z coordinate. Moreover, at every zBlock correspond a startImage and an endImage where $endImage - startImage = imageDz$.\\
+Now we can simply parallelize the conversion process spawning a new process for every zBlock, so we open at most \textit{imageDz} images for process. Finally, we have to wait for tasks completion.\\
+
+Now we can see the entire pipeline for images conversion.\\
+
+First of all we need to compute the centroids from the best image using module \texttt{PngStack2Array3dJulia} and get the previously computed border matrix in csc sparse array format
 
 @D compute centroids and get border matrix
 @{# Create clusters for image segmentation
@@ -813,61 +882,27 @@ boundaryMat = GenerateBorderMatrix.getBorderMatrix(
 					imageDx, "-", imageDy, "-", imageDz, ".json"))
 @}
 
-Now we can start the conversion process.\\
-First of all we need to iterate on the grid finding the zBlock coordinate; we saw earlier that the \textit{imageDz} parameter must be a divisor of the image depth, so we will have exactly \textit{imageDepth/imageDz} blocks on the z coordinate. Moreovew, at every zBlock correspond a startImage and an endImage where $endImage - startImage = imageDz$.\\
-Now we can simply parallelize the conversion process spawning a new process for every zBlock, so we open at most \textit{imageDz} images for process.\\
-This is the code for the first part of conversion.
+Now we can start the pipeline:
 
-@D conversion parallelization
-@{beginImageStack = 0
-endImage = beginImageStack
+@D pipeline conversion
+@{# Starting pipeline conversion
+info("Starting images conversion")
+@< pixels to voxels conversion step @>
 
-info("Converting images into a 3d model")
-tasks = Array(RemoteRef, 0)
-for zBlock in 0:(imageDepth / imageDz - 1)
-  startImage = endImage
-  endImage = startImage + imageDz
-  info("StartImage = ", startImage)
-  info("endImage = ", endImage)
-
-  task = @@spawn imageConversionProcess(sliceDirectory, outputDirectory,
-			  beginImageStack, startImage, endImage,
-			  imageDx, imageDy, imageDz,
-			  imageHeight, imageWidth,
-			  centroidsCalc, boundaryMat)
-
-  push!(tasks, task)
-end
-@}
-
-All processes produce a lot of files containing three-dimensional models of a block, so after their termination, we should merge the boundaries between blocks (see later for a better explanation), the remaining boundaries with their block, smoothing all results and finally merge all remaining files as we can see in this piece of code:
-
-@D final file merge
-@{info("Merging boundaries")
-# Merge Boundaries files
-Model2Obj.mergeBoundaries(string(outputDirectory, "MODELS"),
-			  imageHeight, imageWidth, imageDepth,
-			  imageDx, imageDy, imageDz)
-
+info("Merging boundaries")
+@< boundaries merge step @>
+		
 info("Merging blocks")
-Model2Obj.mergeBlocks(string(outputDirectory, "MODELS"),
-		      imageHeight, imageWidth, imageDepth,
-		      imageDx, imageDy, imageDz)
+@< block merge step @>
 
 info("Smoothing models")
-Model2Obj.smoothBlocks(string(outputDirectory, "MODELS"),
-		       imageHeight, imageWidth, imageDepth,
-                       imageDx, imageDy, imageDz)
+@< smoothing step @>
 
 info("Merging obj models")
-if parallelMerge
-  Model2Obj.mergeObjParallel(string(outputDirectory, "MODELS"))
-else
-  Model2Obj.mergeObj(string(outputDirectory, "MODELS"))
-end
-@}
+@< final file merge @>
+end @}
 
-This is the final code for this function: 
+As we can see, last pipeline step does not require iteration on all grid blocks. This is the code for the function that starts the pipeline, with the parts explained earlier: 
 
 @D start conversion of images
 @{function startImageConversion(sliceDirectory, bestImage, outputDirectory, borderFilename,
@@ -882,19 +917,14 @@ This is the final code for this function:
   """
 
   @< compute centroids and get border matrix @>
-  @< conversion parallelization @>
-  # Waiting for tasks completion
-  for task in tasks
-    wait(task)
-  end
-  @< final file merge @>
-  
-  end
+  @< pipeline conversion @>  
+end
 @}
 
-\subsubsection{Images conversion (for single process)}\label{sec:conversionProcess}
+\subsubsection{Images conversion step}\label{sec:conversionProcess}
 
-After we have sketchily studied images conversion, now we will see in details what happens for every process. First thing to do is read an image calling the \texttt{PngStack2Array3dJulia}, after that is necessary to sort the centroid array for choosing correct background and foreground pixels.
+Now we will focus on the first step of our pipeline conversion: \textit{images conversion}.\\
+First thing to do is read an image calling the \texttt{PngStack2Array3dJulia}, after that is necessary to sort the centroid array for choosing correct background and foreground pixels.
 
 @D image read and centroids sort
 @{info("Transforming png data into 3d array")
@@ -975,7 +1005,7 @@ This is the code for getting foreground pixels:
 @D get foreground pixels
 @{nz, nx, ny = size(image)
 chains3D = Array(Uint8, 0)
-zStart = startImage - beginImageStack
+zStart = startImage
 for y in 0:(nx - 1)
   for x in 0:(ny - 1)
     for z in 0:(nz - 1)
@@ -987,7 +1017,7 @@ for y in 0:(nx - 1)
 end
 @}
 
-Now we have full cells for the geometry, we can convert it into a full \textit{LAR model}. In particular, we are interested in cell boundaries for every block (as we want to obtain only the boundaries for the final model) so we can call function \texttt{larBoundaryChain} from \texttt{Lar2Julia} module (which will be explained in section~\ref{sec:Lar2Julia}). In Figure~\ref{fig:sampleBlocks} there are some examples of models extracted from a single $2 \times 2 \times 2$ block.
+Now that we have full cells for the geometry, we can convert them into a \textit{LAR model}. In particular, we are interested in cell boundaries for every block (as we want to obtain only the boundaries for the final model) so we can call function \texttt{larBoundaryChain} from \texttt{Lar2Julia} module (which will be explained in section~\ref{sec:Lar2Julia}). In Figure~\ref{fig:sampleBlocks} there are some examples of models extracted from a single $2 \times 2 \times 2$ block.
 
 \begin{figure}[htb] %  figure placement: here, top, bottom
    \centering
@@ -997,7 +1027,7 @@ Now we have full cells for the geometry, we can convert it into a full \textit{L
    \label{fig:sampleBlocks}
 \end{figure}
 
-After model computation, next step is getting vertices and faces from model cells writing results to file. However, as we have already said, we are only interested in boundaries of the final model while now we have only boundaries of a single block. Consequently, we have to separate boundaries from the inner faces of the block on different files (boundaries separation will be explained in section~\ref{sec:LARUtils}). As we can see later, we will merge boundaries together deleting common faces on both block borders, obtaining a model without internal faces. These are pieces of code for getting the inner block model and the boundaries and for file writing:
+After model computation, next step is getting vertices and faces from model cells writing results to file. However, as we have already said, we are only interested in boundaries of the final model while now we have only boundaries of a single block. Consequently, we have to separate boundaries from the inner faces of the block on different files (boundaries separation will be explained in section~\ref{sec:LARUtils}). As we can see later, we will merge boundaries together deleting common faces on both block borders, obtaining a model without internal faces. These are pieces of code for getting the inner block model with the boundaries and for file writing:
 
 @D get inner model and boundaries
 @{# IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
@@ -1045,9 +1075,11 @@ Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
 
 @}
 
+This is the \texttt{processFunction} for this pipeline step
+
 @D image conversion process
 @{function imageConversionProcess(sliceDirectory, outputDirectory,
-                                beginImageStack, startImage, endImage,
+                                startImage, endImage,
                                 imageDx, imageDy, imageDz,
                                 imageHeight, imageWidth,
                                 centroids, boundaryMat)
@@ -1093,10 +1125,346 @@ Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
     end
   end
 end @}
+
+This is the code for starting this pipeline step:
+
+@D pixels to voxels conversion step
+@{iterateOnBlocks(sliceDirectory,
+                  imageHeight, imageWidth, imageDepth,
+                  imageDx, imageDy, imageDz,
+                  imageConversionProcess, outputDirectory,
+                  centroidsCalc, boundaryMat) @}
+                  
+\subsubsection{Boundaries merge step}\label{sec:boundariesStep}
+Next step of our pipeline consists in \textit{boundaries merge}. In fact, we have already seen that for every non-empty cell we create files for the inner parts and for the boundaries of the block. So if we want a final model without boundaries between internal blocks, we need to merge them removing duplicated faces on both sides (see Section~\ref{sec:removeDoubleFacesAndVerticesFromBoundaries} for a better explanation of this step). The following is the \texttt{processFunction}:
+
+@D boundary merge process function
+@{function mergeBoundariesProcess(modelDirectory, startImage, endImage,
+                                imageDx, imageDy,
+                                imageWidth, imageHeight)
+  """
+  Helper function for mergeBoundaries.
+  It is executed on different processes
+
+  modelDirectory: Directory containing model files
+  startImage: Block start image
+  endImage: Block end image
+  imageDx, imageDy: x and y sizes of the grid
+  imageWidth, imageHeight: Width and Height of the image
+  """
+  for xBlock in 0:(imageHeight / imageDx - 1)
+    for yBlock in 0:(imageWidth / imageDy - 1)
+
+      # Merging right Boundary
+      firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock,
+			"_", startImage, "_", endImage)
+      secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1,
+			"_", startImage, "_", endImage)
+      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
+
+      # Merging top boundary
+      firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock,
+			 "_", startImage, "_", endImage)
+      secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock,
+			 "_", endImage, "_", endImage + (endImage - startImage))
+      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
+
+      # Merging front boundary
+      firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock,
+			"_", startImage, "_", endImage)
+      secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock,
+			"_", startImage, "_", endImage)
+      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
+    end
+  end
+end @}
+
+For every block we do the following merges:
+\begin{itemize}
+ \item right boundary with the left boundary of the next block on the right
+ \item top boundary with the bottom boundary of the next block on the top
+ \item front boundary with the back boundary of the next block on the front
+\end{itemize}
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.30\linewidth]{images/BoundaryMergeIteration.png}
+   \caption{Merging of boundary faces. For a single block we need adjacent blocks on the right, top and front}
+   \label{fig:boundaryMergeIteration}
+\end{figure}
+
+all merges are executed by the function \texttt{mergeBoundariesAndRemoveDuplicates} which does the work calling the \texttt{Model2Obj} and \texttt{LARUtils} libraries for loading and cleaning of the boundaries models.
+
+@D merge boundaries utility function
+@{function mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
+  """
+  Merge two boundary files removing common faces between
+  them
+
+  firstPath, secondPath: Prefix of paths to merge
+  """
+
+  firstPathV = string(firstPath, "_vtx.stl")
+  firstPathFV = string(firstPath, "_faces.stl")
+
+  secondPathV = string(secondPath, "_vtx.stl")
+  secondPathFV = string(secondPath, "_faces.stl")
+
+  if(isfile(firstPathV) && isfile(secondPathV))
+
+    V, FV = Model2Obj.getModelsFromFiles([firstPathV, secondPathV],
+					 [firstPathFV, secondPathFV])
+
+    # Writing model to file
+    rm(firstPathV)
+    rm(firstPathFV)
+    rm(secondPathV)
+    rm(secondPathFV)
+    writeToObj(V, FV, firstPath)
+  end
+end @}
+
+This is the code used to start this pipeline step:
+
+@D boundaries merge step
+@{iterateOnBlocks(string(outputDirectory, "MODELS"),
+                  imageHeight, imageWidth, imageDepth,
+                  imageDx, imageDy, imageDz,
+                  mergeBoundariesProcess, None,
+                  None) @}
+
+\subsubsection{Block merge step}\label{sec:blockMergeStep}
+
+At this step of the computation, we have files with the inner parts of a single block model and the remaining boundaries. Now we need to merge the blocks removing double vertices and faces, so we can save space and prepare our model to the \textit{smoothing step}. This is the code of the \texttt{processFunction}:
+
+@D Block merge process function
+@{function mergeBlocksProcess(modelDirectory, startImage, endImage,
+                            imageDx, imageDy,
+                            imageWidth, imageHeight)
+  """
+  Helper function for mergeBlocks.
+  It is executed on different processes
+
+  modelDirectory: Directory containing model files
+  startImage: Block start image
+  endImage: Block end image
+  imageDx, imageDy: x and y sizes of the grid
+  imageWidth, imageHeight: Width and Height of the image
+  """
+  for xBlock in 0:(imageHeight / imageDx - 1)
+    for yBlock in 0:(imageWidth / imageDy - 1)
+
+      blockCoordsV = string(xBlock, "-", yBlock, "_", startImage,
+			    "_", endImage, "_vtx.stl")
+      blockCoordsFV = string(xBlock, "-", yBlock, "_", startImage,
+			    "_", endImage, "_faces.stl")
+
+      arrayV = [string(modelDirectory, "/left_output_", blockCoordsV),
+                string(modelDirectory, "/right_output_", blockCoordsV),
+                string(modelDirectory, "/top_output_", blockCoordsV),
+                string(modelDirectory, "/bottom_output_", blockCoordsV),
+                string(modelDirectory, "/front_output_", blockCoordsV),
+                string(modelDirectory, "/back_output_", blockCoordsV),
+                string(modelDirectory, "/model_output_", blockCoordsV)]
+
+      arrayFV = [string(modelDirectory, "/left_output_", blockCoordsFV),
+                 string(modelDirectory, "/right_output_", blockCoordsFV),
+                 string(modelDirectory, "/top_output_", blockCoordsFV),
+                 string(modelDirectory, "/bottom_output_", blockCoordsFV),
+                 string(modelDirectory, "/front_output_", blockCoordsFV),
+                 string(modelDirectory, "/back_output_", blockCoordsFV),
+                 string(modelDirectory, "/model_output_", blockCoordsFV)]
+
+      V, FV = Model2Obj.getModelsFromFiles(arrayV, arrayFV)
+      for i in 1:length(arrayV)
+        if(isfile(arrayV[i]))
+          rm(arrayV[i])
+          rm(arrayFV[i])
+        end
+      end
+
+      Model2Obj.writeToObj(V, FV, string(modelDirectory, "/model_output_",
+                               xBlock, "-", yBlock, "_", startImage, "_", endImage))
+    end
+  end
+end @}
+
+For a better explanation of the \texttt{LARUtils} function that remove duplicated vertices, you can see Section~\ref{sec:doubleverticesandfacesremoval}
+
+This is the code for block merge starting
+@D block merge step
+@{iterateOnBlocks(string(outputDirectory, "MODELS"),
+                  imageHeight, imageWidth, imageDepth,
+                  imageDx, imageDy, imageDz,
+                  mergeBlocks, None,
+                  None) @}
+
+
+\subsubsection{Smoothing step}\label{sec:smoothingStep}
+
+Now we have obtained models without internal boundaries between blocks and without double vertices and faces in a single block. However this partial model has squared edges, so we need to smooth them. The \texttt{processFunction} for this step, is the following:
+
+@D Smooth block process function
+@{function smoothBlocksProcess(modelDirectory, startImage, endImage,
+                             imageDx, imageDy,
+                             imageWidth, imageHeight)
+  """
+  Smoothes a block in a single process
+
+  modelDirectory: Path of the directory containing all blocks
+                  that will be smoothed
+  startImage, endImage: start and end image for this block
+  imageDx, imageDy: sizes of the grid
+  imageWidth, imageHeight: sizes of the images
+  """
+
+  for xBlock in 0:(imageHeight / imageDx - 1)
+    for yBlock in 0:(imageWidth / imageDy - 1)
+
+      # Loading the current block model
+      blockFileV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
+			  "_", startImage, "_", endImage, "_vtx.stl")
+      blockFileFV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
+			  "_", startImage, "_", endImage, "_faces.stl")
+
+      if isfile(blockFileV)
+        # Loading only model of the current block
+        blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
+
+        # Loading a unique model from this block and its adjacents
+        modelsFiles = Array(String, 0)
+        for x in xBlock - 1:xBlock + 1
+          for y in yBlock - 1:yBlock + 1
+            for z in range(startImage - (endImage - startImage),(endImage - startImage), 3)
+              push!(modelsFiles, string(modelDirectory, "/model_output_",
+					x, "-", y, "_", z, "_", z + (endImage - startImage)))
+            end
+          end
+        end
+
+        modelsFilesV = map((s) -> string(s, "_vtx.stl"), modelsFiles)
+        modelsFilesFV = map((s) -> string(s, "_faces.stl"), modelsFiles)
+
+        modelV, modelFV = Model2Obj.getModelsFromFiles(modelsFilesV, modelsFilesFV)
+
+        # Now I have to save indices of vertices of the current block model
+        blockVerticesIndices = Array(Int, 0)
+        for i in 1:length(blockModelV)
+          for j in 1:length(modelV)
+            if blockModelV[i] == modelV[j]
+              push!(blockVerticesIndices, j)
+            end
+          end
+
+          # Now I can apply smoothing on this model
+          V_sm, FV_sm = Smoother.smoothModel(modelV, modelFV)
+
+          # Now I have to get only block vertices and save them on the new model
+          V_final = Array(Array{Float64}, 0)
+          for i in blockVerticesIndices
+            push!(V_final, V_sm[i])
+          end
+          outputFilename = string(modelDirectory, "/smoothed_output_", xBlock, "-",
+				  yBlock, "_", startImage, "_", endImage)
+          Model2Obj.writeToObj(V_final, blockModelFV, outputFilename)
+        end
+      end
+    end
+  end
+end @}
+
+An explanation of the smoothing algorithm used there, can be found in Section~\ref{sec:smoothing}. What we need to remember here, is the importance of having the adjacent vertices for every vertex of our block. In fact, according to the chosen smoothing algorithm, every vertex is replaced with a new one with coordinates computed from the mean positions of its adjacent. However, loading of the entire model into memory cannot be done because of its sizes; so we created a simple algorithm which loads only near blocks to the current one.
+In fact, for every block we want to smooth, we load the twenty six adjacent blocks on all directions and the chosen one. We create a unique model with it (removing double vertices and faces) and then smoothing it with the algorithm in \texttt{Smoother} module. Finally we save only smoothed vertices for the chosen block and continue with the other blocks. In Figure~\ref{fig:SmoothingBlocks} there is a graphical explanation for the algorithm.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.30\linewidth]{images/SmoothingBlocks.png}
+   \caption{Smoothing of a single block. The red block at the center of the figure is the current one, while the other twenty six colored ones are the blocks that will be part of the model which will be smoothed for this iteration}
+   \label{fig:SmoothingBlocks}
+\end{figure}
+
+Moreover, this \texttt{processFunction} can only execute a single iteration of the smoothing algorithm, so we need a function that can be able to execute more times the algorithm:
+
+@D execute smoothing function
+@{function smoothBlocks(modelDirectory,
+                      imageHeight, imageWidth, imageDepth,
+                      imageDx, imageDy, imageDz)
+  """
+  Smoothes all blocks of the
+  model
+  """
+  
+  @< smoothed files renaming @>
+  
+  iterations = 3
+  for i in 1:iterations
+    info("Iteration ", i)
+
+    iterateOnBlocks(modelDirectory,
+                    imageHeight, imageWidth, imageDepth,
+                    imageDx, imageDy, imageDz,
+                    smoothBlocksProcess)
+
+    iterateOnBlocks(modelDirectory,
+                    imageHeight, imageWidth, imageDepth,
+                    imageDx, imageDy, imageDz,
+                    moveSmoothed)
+  end
+
+end @}
+
+We can see that after every smoothing iteration on the complete model, we need to rename the output files for the next iterations. In fact, this parallel algorithm works because for every block we do not need the current smoothed vertices for the adjacent blocks but only the old ones. However after first iteration we will have a lot of files with both the new smoothed model and the previous version; as a consequence we need to remove the old model and prepare the smoothed data for the next smoothing iteration. This is the code for the file renaming:
+
+@D smoothed files renaming
+@{function moveSmoothed(modelDirectory, startImage, endImage,
+		      imageDx, imageDy,
+		      imageWidth, imageHeight)
+
+  for xBlock in 0:(imageHeight / imageDx - 1)
+    for yBlock in 0:(imageWidth / imageDy - 1)
+
+      f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
+		   startImage, "_", endImage, "_vtx.stl")
+      f_FV = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
+		   startImage, "_", endImage, "_faces.stl")
+
+      if(isfile(f_V))
+	if VERSION >= v"0.4"
+	  mv(f_V, replace(f_V, "smoothed", "model"), remove_destination = true)
+	  mv(f_FV, replace(f_FV, "smoothed", "model"), remove_destination = true)
+	else
+	  mv(f_V, replace(f_V, "smoothed", "model"))
+	  mv(f_FV, replace(f_FV, "smoothed", "model"))
+	end
+
+      end
+    end
+  end
+
+end @}
+
+This is the code for starting this step:
+
+@D smoothing step
+@{moveSmoothed(modelDirectory, startImage, endImage,
+	       imageDx, imageDy,
+	       imageWidth, imageHeight) @}
+
+\subsubsection{Model creation step}\label{sec:mergeStep}
+
+At this point of the pipeline, we have a lot of files containing models for a single block; now we can merge them in a unique obj file. As we will see in Section~\ref{sec:Model2Obj}, there are two different algorithms for file merging. The first one use a serial merging and it is better for traditional filesystems. The other one use a parallel algorithm which 
+is better on a distributed filesystem. This is the code for invocation of the step:
+
+@D final file merge
+@{if parallelMerge
+  Model2Obj.mergeObjParallel(string(outputDirectory, "MODELS"))
+else
+  Model2Obj.mergeObj(string(outputDirectory, "MODELS")) @}
+
 %===============================================================================
 \section{GenerateBorderMatrix}\label{sec:GenerateBorderMatrix}
 %===============================================================================
-This module has the reponsibility of generating the border matrix operator for models boundary computation.
+This module has the responsibility for the generation of the border matrix operator for models boundary computation.
 
 \subsection{Module imports}\label{sec:importsBorderMatrix}
 
@@ -2014,7 +2382,7 @@ As we will see in next subsection, for executing a smoothing algorithm we need t
 
 Algorithm is very simple and exploit the following property: \textit{for triangular faces all vertices are linked together}. So we just need to search for every vertex \textit{i} all faces that contain it and add all their vertices to a list. \textit{VV} will contain a concatenation of all these lists
 
-@D Get adjacent vertices
+@D get adjacent vertices
 @{function adjVerts(V, FV)
   """
   Compute the adjacency graph of vertices
@@ -2102,6 +2470,14 @@ This is the code for the smoothing function; it takes a single LAR model and ret
 end @}
 
 
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/ModelSmoothing0.png}
+   \includegraphics[width=0.40\linewidth]{images/ModelSmoothing1.png}
+   \caption{Smoothing of a sample model made with ImagesToLARModel}
+   \label{fig:smoothingExample}
+\end{figure}
+
 %===============================================================================
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================
@@ -2131,9 +2507,22 @@ end
 
 @< main function for ImagesConversion @>
 
+@< parallel block iteration @>
+
 @< start conversion of images @>
 
 @< image conversion process @>
+
+@< boundary merge process function @>
+
+@< merge boundaries utility function @>
+
+@< Block merge process function @>
+
+@< Smooth block process function@>
+
+@< execute smoothing function @>
+
 end
 @}
 
@@ -2855,67 +3244,9 @@ end
 @O src/Smoother.jl
 @{module Smoother
 
-function adjVerts(V, FV)
-  """
-  Compute the adjacency graph of vertices
-  of a LAR model
+@< get adjacent vertices @>
 
-  V, FV: LAR model
-
-  Returns the list of indices of vertices adjacent
-  to a vertex
-  """
-  VV = Array{Int}[]
-  for i in 1:length(V)
-    row = Array(Int, 0)
-    for face in FV
-      if i in face
-        for v in face
-          push!(row, v)
-        end
-      end
-    end
-    if length(row) == 0
-      push!(row, i)
-    end
-    push!(VV, collect(unique(row)))
-  end
-  return VV
-end
-
-function smoothModel(V, FV)
-  """
-  Execute a Laplacian smoothing on a LAR model returning
-  the new smoothed model
-
-  V, FV: LAR model
-  """
-
-  VV = adjVerts(V, FV)
-  newV = Array(Array{Float64},0)
-  V_temp = Array(Array{Float64},0)
-
-  for i in 1:length(VV)
-    adjs = VV[i]
-    # Get all coordinates for adjacent vertices
-    coords = Array(Array{Float64}, 0)
-    for v in adjs
-      push!(coords, V[v])
-    end
-
-    # Computing sum of all vectors
-    sum = [0.0, 0.0, 0.0]
-    for v in coords
-      sum += v
-    end
-
-    # Computing convex combination of vertices
-    push!(newV, sum/length(adjs))
-
-  end
-
-  return newV, FV
-end
+@< laplacian smoothing @>
 end
 @}
 
