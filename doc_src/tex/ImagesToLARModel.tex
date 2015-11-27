@@ -621,7 +621,8 @@ Finally we have to compute clusters obtaining images with only two values:
 debug("page = ", page)
 debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
 pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-qnt = kmeans!(convert(Array{Float64},transpose(pixel)), convert(Array{Float64},centroids)).assignments
+qnt = kmeans!(convert(Array{Float64},transpose(pixel)),
+	    convert(Array{Float64},centroids)).assignments
 
 # Reshaping quantization result
 centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
@@ -1407,7 +1408,7 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
   
   @< smoothed files renaming @>
   
-  iterations = 3
+  iterations = 1
   for i in 1:iterations
     info("Iteration ", i)
 

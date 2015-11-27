@@ -516,7 +516,7 @@ function smoothBlocks(modelDirectory,
 
   end 
   
-  iterations = 3
+  iterations = 1
   for i in 1:iterations
     info("Iteration ", i)
 
