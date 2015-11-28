@@ -148,7 +148,7 @@ function removeDoubleVertices(V)
                                           orderedIndices))
   newVertices = Array(Array{Float64}, 0)
   indices = zeros(Int, length(V))
-  prevv = Nothing
+  prevv = Void
   i = 1
   for (v, ind) in orderedVerticesAndIndices
     if v == prevv

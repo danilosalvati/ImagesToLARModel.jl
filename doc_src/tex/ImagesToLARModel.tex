@@ -1964,7 +1964,7 @@ Now we can remove double vertices from the \textit{V} array simply ordering them
                                           orderedIndices))
   newVertices = Array(Array{Float64}, 0)
   indices = zeros(Int, length(V))
-  prevv = Nothing
+  prevv = Void
   i = 1
   for (v, ind) in orderedVerticesAndIndices
     if v == prevv
@@ -2667,7 +2667,11 @@ function mergeObj(modelDirectory)
 
     # Writing vertices on the obj file
     for ln in eachline(f)
-      write(obj_file, ln)
+      splitted = split(ln)
+      write(obj_file, "v ")
+      write(obj_file, string(convert(Int,round(parse(splitted[2]) * 10)), " "))
+      write(obj_file, string(convert(Int,round(parse(splitted[3]) * 10)), " "))
+      write(obj_file, string(convert(Int,round(parse(splitted[4]) * 10)), "\n"))
       number_of_vertices += 1
     end
     # Saving number of vertices
