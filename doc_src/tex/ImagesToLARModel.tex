@@ -584,7 +584,7 @@ This is the code used for centroid computation:
 end
 @}
 
-\subsection{Transform pixels to three-dimensional array}\label{sec:transformation}
+\subsection{Transform pixels into three-dimensional array}\label{sec:transformation}
 
 Now we can study the most important part of this module, where images are converted into data usable by other modules for the creation of the three-dimensional model. The basic concept consists in transforming every single pixel in an integer value representing color, and then clustering them all using centroids computed earlier. So, we can obtain a matrix containing only two values (the two centroids) representing background and foreground of the image.\\
 Now we will follow the code. This function uses four parameters
@@ -621,8 +621,16 @@ Finally we have to compute clusters obtaining images with only two values:
 debug("page = ", page)
 debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
 pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-qnt = kmeans!(convert(Array{Float64},transpose(pixel)),
-	    convert(Array{Float64},centroids)).assignments
+kmeansResults = kmeans!(convert(Array{Float64},transpose(pixel)),
+                convert(Array{Float64},centroids))
+
+qnt = kmeansResults.assignments
+centers = kmeansResults.centers
+if(centers[1] == centers[2])
+  # The image has only a value
+  index = findmin([abs(centroids[1]-centers[1]),abs(centroids[2]-centers[1])])[2]
+  qnt = fill(index, size(qnt))
+end
 
 # Reshaping quantization result
 centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
@@ -646,6 +654,8 @@ image3d[page] = tmp @}
    \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
    \label{fig:rawImage}
 \end{figure}
+
+We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This could happen when the images is completely empty or it has only colored pixels. So, we need to check this cases and fill the assignments array \texttt{qnt} with the right values based on the \texttt{centroids} parameter.
 
 This is the complete code:
 

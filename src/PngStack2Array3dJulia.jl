@@ -185,8 +185,16 @@ function pngstack2array3d(path, minSlice, maxSlice, centroids)
     debug("page = ", page)
     debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
     pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-    qnt = kmeans!(convert(Array{Float64},transpose(pixel)),
-                convert(Array{Float64},centroids)).assignments
+    kmeansResults = kmeans!(convert(Array{Float64},transpose(pixel)),
+                    convert(Array{Float64},centroids))
+
+    qnt = kmeansResults.assignments
+    centers = kmeansResults.centers
+    if(centers[1] == centers[2])
+      # The image has only a value
+      index = findmin([abs(centroids[1]-centers[1]),abs(centroids[2]-centers[1])])[2]
+      qnt = fill(index, size(qnt))
+    end
 
     # Reshaping quantization result
     centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))

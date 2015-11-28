@@ -584,7 +584,7 @@ This is the code used for centroid computation:
 end
 @}
 
-\subsection{Transform pixels to three-dimensional array}\label{sec:transformation}
+\subsection{Transform pixels into three-dimensional array}\label{sec:transformation}
 
 Now we can study the most important part of this module, where images are converted into data usable by other modules for the creation of the three-dimensional model. The basic concept consists in transforming every single pixel in an integer value representing color, and then clustering them all using centroids computed earlier. So, we can obtain a matrix containing only two values (the two centroids) representing background and foreground of the image.\\
 Now we will follow the code. This function uses four parameters
@@ -621,7 +621,16 @@ Finally we have to compute clusters obtaining images with only two values:
 debug("page = ", page)
 debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
 pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-qnt = kmeans!(convert(Array{Float64},transpose(pixel)), convert(Array{Float64},centroids)).assignments
+kmeansResults = kmeans!(convert(Array{Float64},transpose(pixel)),
+                convert(Array{Float64},centroids))
+
+qnt = kmeansResults.assignments
+centers = kmeansResults.centers
+if(centers[1] == centers[2])
+  # The image has only a value
+  index = findmin([abs(centroids[1]-centers[1]),abs(centroids[2]-centers[1])])[2]
+  qnt = fill(index, size(qnt))
+end
 
 # Reshaping quantization result
 centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
@@ -645,6 +654,8 @@ image3d[page] = tmp @}
    \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
    \label{fig:rawImage}
 \end{figure}
+
+We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This can happen when the images is completely empty or it has only colored pixels. 
 
 This is the complete code:
 
@@ -1407,7 +1418,7 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
   
   @< smoothed files renaming @>
   
-  iterations = 3
+  iterations = 1
   for i in 1:iterations
     info("Iteration ", i)
 
@@ -1963,7 +1974,7 @@ Now we can remove double vertices from the \textit{V} array simply ordering them
                                           orderedIndices))
   newVertices = Array(Array{Float64}, 0)
   indices = zeros(Int, length(V))
-  prevv = Nothing
+  prevv = Void
   i = 1
   for (v, ind) in orderedVerticesAndIndices
     if v == prevv
@@ -2666,7 +2677,11 @@ function mergeObj(modelDirectory)
 
     # Writing vertices on the obj file
     for ln in eachline(f)
-      write(obj_file, ln)
+      splitted = split(ln)
+      write(obj_file, "v ")
+      write(obj_file, string(convert(Int,round(parse(splitted[2]) * 10)), " "))
+      write(obj_file, string(convert(Int,round(parse(splitted[3]) * 10)), " "))
+      write(obj_file, string(convert(Int,round(parse(splitted[4]) * 10)), "\n"))
       number_of_vertices += 1
     end
     # Saving number of vertices

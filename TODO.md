@@ -36,8 +36,6 @@
 
 ## Smoother
 
-- The Laplacian algorithm sometimes creates inverted elements. Study a remedy for it
-
 ## Tests
 
 - Update all old tests (they don't work after package refactoring)
