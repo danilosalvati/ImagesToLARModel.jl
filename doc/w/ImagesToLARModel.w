@@ -1415,9 +1415,7 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
   Smoothes all blocks of the
   model
   """
-  
-  @< smoothed files renaming @>
-  
+   
   iterations = 1
   for i in 1:iterations
     info("Iteration ", i)
@@ -1455,39 +1453,7 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
   end
 end @}
 
-We can see that after every smoothing iteration on the complete model, we need to rename the output files for the next iterations. In fact, this parallel algorithm works because for every block we do not need the current smoothed vertices for the adjacent blocks but only the old ones. However after first iteration we will have a lot of files with both the new smoothed model and the previous version; as a consequence we need to remove the old model and prepare the smoothed data for the next smoothing iteration. This is the code for the file renaming:
-
-@D smoothed files renaming
-@{function moveSmoothed(modelDirectory,
-		      startImage, endImage,
-		      imageDx, imageDy,
-		      imageWidth, imageHeight,
-		      outputDirectory = None,
-		      centroidsCalc = None, boundaryMat = None)
-
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
-
-      f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
-		   startImage, "_", endImage, "_vtx.stl")
-      f_FV = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
-		   startImage, "_", endImage, "_faces.stl")
-
-      if(isfile(f_V))
-	if VERSION >= v"0.4"
-	  mv(f_V, replace(f_V, "smoothed", "model"), remove_destination = true)
-	  mv(f_FV, replace(f_FV, "smoothed", "model"), remove_destination = true)
-	else
-	  mv(f_V, replace(f_V, "smoothed", "model"))
-	  mv(f_FV, replace(f_FV, "smoothed", "model"))
-	end
-
-      end
-    end
-  end
-
-end @}
-
+We can see that after every smoothing iteration on the complete model, we need to rename the output files for the next iterations. In fact, this parallel algorithm works because for every block we do not need the current smoothed vertices for the adjacent blocks but only the old ones. However after first iteration we will have a lot of files with both the new smoothed model and the previous version; as a consequence we need to remove the old model and prepare the smoothed data for the next smoothing iteration.
 This is the code for starting this step:
 
 @D smoothing step

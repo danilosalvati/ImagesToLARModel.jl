@@ -485,37 +485,7 @@ function smoothBlocks(modelDirectory,
   Smoothes all blocks of the
   model
   """
-  
-  function moveSmoothed(modelDirectory,
-                        startImage, endImage,
-                        imageDx, imageDy,
-                        imageWidth, imageHeight,
-                        outputDirectory = None,
-                        centroidsCalc = None, boundaryMat = None)
-
-    for xBlock in 0:(imageHeight / imageDx - 1)
-      for yBlock in 0:(imageWidth / imageDy - 1)
-
-        f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
-                     startImage, "_", endImage, "_vtx.stl")
-        f_FV = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
-                     startImage, "_", endImage, "_faces.stl")
-
-        if(isfile(f_V))
-          if VERSION >= v"0.4"
-            mv(f_V, replace(f_V, "smoothed", "model"), remove_destination = true)
-            mv(f_FV, replace(f_FV, "smoothed", "model"), remove_destination = true)
-          else
-            mv(f_V, replace(f_V, "smoothed", "model"))
-            mv(f_FV, replace(f_FV, "smoothed", "model"))
-          end
-
-        end
-      end
-    end
-
-  end 
-  
+   
   iterations = 1
   for i in 1:iterations
     info("Iteration ", i)
