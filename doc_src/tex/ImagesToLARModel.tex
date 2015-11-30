@@ -1426,6 +1426,10 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
                     smoothBlocksProcess,
                     None, None, None)
 
+    # Moving smoothed file for next iterations
+
+    beginImageStack = 0
+    endImage = beginImageStack
     for zBlock in 0:(imageDepth / imageDz - 1)
       startImage = endImage
       endImage = startImage + imageDz

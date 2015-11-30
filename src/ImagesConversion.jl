@@ -496,6 +496,10 @@ function smoothBlocks(modelDirectory,
                     smoothBlocksProcess,
                     None, None, None)
 
+    # Moving smoothed file for next iterations
+
+    beginImageStack = 0
+    endImage = beginImageStack
     for zBlock in 0:(imageDepth / imageDz - 1)
       startImage = endImage
       endImage = startImage + imageDz
