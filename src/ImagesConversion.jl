@@ -182,10 +182,10 @@ function imageConversionProcess(sliceDirectory,
   debug(string("background = ", background, " foreground = ", foreground))
   
 
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
-      yStart = xBlock * imageDx
-      xStart = yBlock * imageDy
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
+      xStart = xBlock * imageDx
+      yStart = yBlock * imageDy
       xEnd = xStart + imageDx
       yEnd = yStart + imageDy
       debug("***********")
@@ -211,11 +211,11 @@ function imageConversionProcess(sliceDirectory,
       nz, nx, ny = size(image)
       chains3D = Array(Uint8, 0)
       zStart = startImage
-      for y in 0:(nx - 1)
-        for x in 0:(ny - 1)
+      for y in 0:(ny - 1)
+        for x in 0:(nx - 1)
           for z in 0:(nz - 1)
             if(image[z + 1, x + 1, y + 1] == foreground)
-              push!(chains3D, y + ny * (x + nx * z))
+              push!(chains3D, x + nx * (y + ny * z))
             end
           end
         end
@@ -232,9 +232,8 @@ function imageConversionProcess(sliceDirectory,
           mkdir(string(outputDirectory, "MODELS"))
         catch
         end
-        # IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
         models = LARUtils.computeModelAndBoundaries(nx, ny, nz,
-                                                    yStart, xStart, zStart, objectBoundaryChain)
+                                                    xStart, yStart, zStart, objectBoundaryChain)
 
         V, FV = models[1][1] # inside model
         V_left, FV_left = models[2][1]

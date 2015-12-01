@@ -48,5 +48,6 @@
 
 ## Documentation
 
+- Fix the figure with linearized matrix with the correct indices
 - Update architecture schema with new modules and functions
 - Add documentation for Model2Obj

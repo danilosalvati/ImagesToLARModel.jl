@@ -1018,11 +1018,11 @@ This is the code for getting foreground pixels:
 @{nz, nx, ny = size(image)
 chains3D = Array(Uint8, 0)
 zStart = startImage
-for y in 0:(nx - 1)
-  for x in 0:(ny - 1)
+for y in 0:(ny - 1)
+  for x in 0:(nx - 1)
     for z in 0:(nz - 1)
       if(image[z + 1, x + 1, y + 1] == foreground)
-	push!(chains3D, y + ny * (x + nx * z))
+	push!(chains3D, x + nx * (y + ny * z))
       end
     end
   end
@@ -1042,9 +1042,8 @@ Now that we have full cells for the geometry, we can convert them into a \textit
 After model computation, next step is getting vertices and faces from model cells writing results to file. However, as we have already said, we are only interested in boundaries of the final model while now we have only boundaries of a single block. Consequently, we have to separate boundaries from the inner faces of the block on different files (boundaries separation will be explained in section~\ref{sec:LARUtils}). As we can see later, we will merge boundaries together deleting common faces on both block borders, obtaining a model without internal faces. These are pieces of code for getting the inner block model with the boundaries and for file writing:
 
 @D get inner model and boundaries
-@{# IMPORTANT: inverting xStart and yStart for obtaining correct rotation of the model
-models = LARUtils.computeModelAndBoundaries(nx, ny, nz,
-					    yStart, xStart, zStart, objectBoundaryChain)
+@{models = LARUtils.computeModelAndBoundaries(nx, ny, nz,
+					    xStart, yStart, zStart, objectBoundaryChain)
 
 V, FV = models[1][1] # inside model
 V_left, FV_left = models[2][1]
@@ -1103,10 +1102,10 @@ This is the \texttt{processFunction} for this pipeline step
 
   @< image read and centroids sort @>
 
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
-      yStart = xBlock * imageDx
-      xStart = yBlock * imageDy
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
+      xStart = xBlock * imageDx
+      yStart = yBlock * imageDy
       xEnd = xStart + imageDx
       yEnd = yStart + imageDy
       debug("***********")
