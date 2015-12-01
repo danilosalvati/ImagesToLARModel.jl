@@ -1449,7 +1449,6 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
               mv(f_V, replace(f_V, "smoothed", "model"))
               mv(f_FV, replace(f_FV, "smoothed", "model"))
             end
-
           end
         end
       end
@@ -1716,6 +1715,15 @@ Another operation that could be useful (even if it is not actually used in the p
 end @}
 
 \subsection{Transform relationships from arrays of arrays to a sparse matrix}\label{sec:transformSparse}
+
+Another function which can be useful for our purposes is conversion between different representations of the LAR relationships. For example we often use a representation based on list of list of int but if we want to apply topological operators (such as the incident operators) we need to convert it into a matrix of values. In Figure~\ref{fig:LARRepresentations} we can see an example of a LAR relationship with different representations.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.45\linewidth]{images/LARRepresentations.png}
+   \caption{Different representations for faces of a simple LAR model. the first one is based on a list of list of int, while the other is a simple matrix where for every value we have $FV[i][j] = 1 \iff $ \textit{face i contains the vertex j} }
+   \label{fig:LARRepresentations}
+\end{figure}
 
 @D transform relationships to csc
 @{function relationshipListToCSC(larRelation)

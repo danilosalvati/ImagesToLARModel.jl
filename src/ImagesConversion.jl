@@ -519,7 +519,6 @@ function smoothBlocks(modelDirectory,
               mv(f_V, replace(f_V, "smoothed", "model"))
               mv(f_FV, replace(f_FV, "smoothed", "model"))
             end
-
           end
         end
       end

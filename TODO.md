@@ -50,4 +50,3 @@
 
 - Update architecture schema with new modules and functions
 - Add documentation for Model2Obj
-- Update documentation for Lar2Julia (conversion from LAR list to sparse array)

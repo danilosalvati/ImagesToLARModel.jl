@@ -655,7 +655,7 @@ image3d[page] = tmp @}
    \label{fig:rawImage}
 \end{figure}
 
-We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This can happen when the images is completely empty or it has only colored pixels. 
+We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This could happen when the images is completely empty or it has only colored pixels. So, we need to check this cases and fill the assignments array \texttt{qnt} with the right values based on the \texttt{centroids} parameter.
 
 This is the complete code:
 
@@ -1415,9 +1415,7 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
   Smoothes all blocks of the
   model
   """
-  
-  @< smoothed files renaming @>
-  
+   
   iterations = 1
   for i in 1:iterations
     info("Iteration ", i)
@@ -1428,48 +1426,37 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
                     smoothBlocksProcess,
                     None, None, None)
 
-    iterateOnBlocks(modelDirectory,
-                    imageHeight, imageWidth, imageDepth,
-                    imageDx, imageDy, imageDz,
-                    moveSmoothed,
-                    None, None, None)
-  end
+    # Moving smoothed file for next iterations
 
-end @}
+    beginImageStack = 0
+    endImage = beginImageStack
+    for zBlock in 0:(imageDepth / imageDz - 1)
+      startImage = endImage
+      endImage = startImage + imageDz
+      for xBlock in 0:(imageHeight / imageDx - 1)
+        for yBlock in 0:(imageWidth / imageDy - 1)
 
-We can see that after every smoothing iteration on the complete model, we need to rename the output files for the next iterations. In fact, this parallel algorithm works because for every block we do not need the current smoothed vertices for the adjacent blocks but only the old ones. However after first iteration we will have a lot of files with both the new smoothed model and the previous version; as a consequence we need to remove the old model and prepare the smoothed data for the next smoothing iteration. This is the code for the file renaming:
+          f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
+                       startImage, "_", endImage, "_vtx.stl")
+          f_FV = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
+                        startImage, "_", endImage, "_faces.stl")
 
-@D smoothed files renaming
-@{function moveSmoothed(modelDirectory,
-		      startImage, endImage,
-		      imageDx, imageDy,
-		      imageWidth, imageHeight,
-		      outputDirectory = None,
-		      centroidsCalc = None, boundaryMat = None)
-
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
-
-      f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
-		   startImage, "_", endImage, "_vtx.stl")
-      f_FV = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
-		   startImage, "_", endImage, "_faces.stl")
-
-      if(isfile(f_V))
-	if VERSION >= v"0.4"
-	  mv(f_V, replace(f_V, "smoothed", "model"), remove_destination = true)
-	  mv(f_FV, replace(f_FV, "smoothed", "model"), remove_destination = true)
-	else
-	  mv(f_V, replace(f_V, "smoothed", "model"))
-	  mv(f_FV, replace(f_FV, "smoothed", "model"))
-	end
-
+          if(isfile(f_V))
+            if VERSION >= v"0.4"
+              mv(f_V, replace(f_V, "smoothed", "model"), remove_destination = true)
+              mv(f_FV, replace(f_FV, "smoothed", "model"), remove_destination = true)
+            else
+              mv(f_V, replace(f_V, "smoothed", "model"))
+              mv(f_FV, replace(f_FV, "smoothed", "model"))
+            end
+          end
+        end
       end
     end
   end
-
 end @}
 
+We can see that after every smoothing iteration on the complete model, we need to rename the output files for the next iterations. In fact, this parallel algorithm works because for every block we do not need the current smoothed vertices for the adjacent blocks but only the old ones. However after first iteration we will have a lot of files with both the new smoothed model and the previous version; as a consequence we need to remove the old model and prepare the smoothed data for the next smoothing iteration.
 This is the code for starting this step:
 
 @D smoothing step
@@ -1728,6 +1715,15 @@ Another operation that could be useful (even if it is not actually used in the p
 end @}
 
 \subsection{Transform relationships from arrays of arrays to a sparse matrix}\label{sec:transformSparse}
+
+Another function which can be useful for our purposes is conversion between different representations of the LAR relationships. For example we often use a representation based on list of list of int but if we want to apply topological operators (such as the incident operators) we need to convert it into a matrix of values. In Figure~\ref{fig:LARRepresentations} we can see an example of a LAR relationship with different representations.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.50\linewidth]{images/LARRepresentations.png}
+   \caption{Different representations for faces of a simple LAR model. the first one is based on a list of list of int, while the other is a simple matrix where for every value we have that $FV[i] = 1 \iff aa $}
+   \label{fig:LARRepresentations}
+\end{figure}
 
 @D transform relationships to csc
 @{function relationshipListToCSC(larRelation)
