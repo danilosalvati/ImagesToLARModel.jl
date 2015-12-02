@@ -92,6 +92,7 @@ function convertImages(inputPath, outputPath, bestImage)
     img = grayim(imArray)
     outputFilename = string(outputPath, "/", 
                         outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
+    imwrite(img, outputFilename)
   end 
 
   return newBestImage

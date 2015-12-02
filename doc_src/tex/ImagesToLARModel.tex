@@ -431,6 +431,7 @@ if(numberOfImages % 2 != 0)
   img = grayim(imArray)
   outputFilename = string(outputPath, "/", 
 		      outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
+  imwrite(img, outputFilename)
 end @}
 
 
