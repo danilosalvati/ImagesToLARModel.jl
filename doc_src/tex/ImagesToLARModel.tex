@@ -950,26 +950,28 @@ foreground = centroidsSorted[2]
 debug(string("background = ", background, " foreground = ", foreground))
 @}
 
-Now we can start iterating on other blocks of the grid getting the corresponding slice of the image:
+Now we can start iterating on other blocks of the grid:
 
-@D get image slice
-@{# Getting a slice of theImage array
+@D block iteration
+@{for xBlock in 0:(imageWidth / imageDx - 1)
+  for yBlock in 0:(imageHeight / imageDy - 1)
+  
+    xStart = xBlock * imageDx
+    yStart = yBlock * imageDy
+    zStart = startImage
+    
+    xEnd = xStart + imageDx
+    yEnd = yStart + imageDy
+  
+    imageDz = length(theImage)
+  
+    debug("***********")
+    debug(string("xStart = ", xStart, " xEnd = ", xEnd))
+    debug(string("yStart = ", yStart, " yEnd = ", yEnd))
+    debug("theImage dimensions: ", size(theImage)[1], " ",
+	  size(theImage[1])[1], " ", size(theImage[1])[2]) @}
 
-image = Array(Uint8, (convert(Int, length(theImage)), 
-		      convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
-debug("image size: ", size(image))
-for z in 1:length(theImage)
-  for x in 1 : (xEnd - xStart)
-    for y in 1 : (yEnd - yStart)
-      image[z, x, y] = theImage[z][x + xStart, y + yStart]
-    end
-  end
-end
-@}
-
-Here \textit{xStart} and \textit{yStart} are the absolute coordinates of the model and are calculated from the block coordinates. At the end of this process, we have an array called \texttt{image} with size $(imageDz, imageDx, imageDy)$.
-
-Now we can get the value of the single pixel into this array and, if it represents a foreground point, put it into an array called \texttt{chain3D}. This structure contains indexes of the linearized array created from the matrix. In Figure~\ref{fig:linearizedMatrix} there is a sample conversion from the matrix to the array
+Here \textit{xStart} and \textit{yStart} are the absolute coordinates of the model and are calculated from the block coordinates. Now we can get the current slice for the entire image (with size $(imageDx, imageDy, imageDz)$), check values for every single pixel into it and, if it represents a foreground point, put it into an array called \texttt{chain3D}. This structure contains indexes of the linearized array created from the matrix. In Figure~\ref{fig:linearizedMatrix} there is a sample conversion from the matrix to the array
 
 \begin{figure}[htb] %  figure placement: here, top, bottom
    \centering
@@ -1007,28 +1009,26 @@ Now we can get the value of the single pixel into this array and, if it represen
     \end{array}
     $
    \hfill
-   \caption{Transformation of a matrix resulting from a 2x2x2 grid into a linearized array (with cells indexes) (a) First example (b) Second example}
+   \caption{Transformation of a matrix resulting from a 2x2x2 grid into a linearized array (with cells indexes) (a) First example (b) Second example DA CORREGGERE CON I VALORI CORRETTI}
    \label{fig:linearizedMatrix}
 \end{figure}
 
-As we can see from that figure, from a 2x2x2 grid we can obtain eight values for the single block (or \textbf{cell}), where the indexes for the foreground pixels represent indexes of non-empty cells in a 2x2x2 cuboidal geometry
-
+As we can see from that figure, from a 2x2x2 grid we can obtain eight values for the single block (or \textbf{cell}), where the indexes for the foreground pixels represent indexes of non-empty cells in a 2x2x2 cuboidal geometry.
 This is the code for getting foreground pixels:
 
-@D get foreground pixels
-@{nz, nx, ny = size(image)
-chains3D = Array(Uint8, 0)
-zStart = startImage
-for y in 0:(ny - 1)
-  for x in 0:(nx - 1)
-    for z in 0:(nz - 1)
-      if(image[z + 1, x + 1, y + 1] == foreground)
-	push!(chains3D, x + nx * (y + ny * z))
+@D get image slice
+@{chains3D = Array(Int, 0)
+for z in 1 : length(theImage)
+  for y in 1 : (yEnd - yStart)
+    for x in 1 : (xEnd - xStart)
+      if(theImage[z][x + xStart, y + yStart] == foreground)
+        index = convert(Int, x - 1) + convert(Int, y - 1) * 
+		  imageDx + convert(Int, z - 1) * (imageDx * imageDy)
+	push!(chains3D, index)
       end
     end
   end
-end
-@}
+end @}
 
 Now that we have full cells for the geometry, we can convert them into a \textit{LAR model}. In particular, we are interested in cell boundaries for every block (as we want to obtain only the boundaries for the final model) so we can call function \texttt{larBoundaryChain} from \texttt{Lar2Julia} module (which will be explained in section~\ref{sec:Lar2Julia}). In Figure~\ref{fig:sampleBlocks} there are some examples of models extracted from a single $2 \times 2 \times 2$ block.
 
@@ -1083,9 +1083,7 @@ Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
 
 back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock,
 				"-", yBlock, "_", startImage, "_", endImage)
-Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
-
-@}
+Model2Obj.writeToObj(V_back, FV_back, back_outputFilename) @}
 
 This is the \texttt{processFunction} for this pipeline step
 
@@ -1102,23 +1100,11 @@ This is the \texttt{processFunction} for this pipeline step
   """
 
   @< image read and centroids sort @>
-
-  for xBlock in 0:(imageWidth / imageDx - 1)
-    for yBlock in 0:(imageHeight / imageDy - 1)
-      xStart = xBlock * imageDx
-      yStart = yBlock * imageDy
-      xEnd = xStart + imageDx
-      yEnd = yStart + imageDy
-      debug("***********")
-      debug(string("xStart = ", xStart, " xEnd = ", xEnd))
-      debug(string("yStart = ", yStart, " yEnd = ", yEnd))
-      debug("theImage dimensions: ", size(theImage)[1], " ",
-		      size(theImage[1])[1], " ", size(theImage[1])[2])
+  
+  @< block iteration @>
 
       @< get image slice @>
       
-      @< get foreground pixels @>
-
       if(length(chains3D) != 0)
         # Computing boundary chain
         debug("chains3d = ", chains3D)

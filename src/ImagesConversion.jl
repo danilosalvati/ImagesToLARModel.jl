@@ -181,47 +181,38 @@ function imageConversionProcess(sliceDirectory,
   foreground = centroidsSorted[2]
   debug(string("background = ", background, " foreground = ", foreground))
   
-
+  
   for xBlock in 0:(imageWidth / imageDx - 1)
     for yBlock in 0:(imageHeight / imageDy - 1)
+    
       xStart = xBlock * imageDx
       yStart = yBlock * imageDy
+      zStart = startImage
+      
       xEnd = xStart + imageDx
       yEnd = yStart + imageDy
+    
+      imageDz = length(theImage)
+    
       debug("***********")
       debug(string("xStart = ", xStart, " xEnd = ", xEnd))
       debug(string("yStart = ", yStart, " yEnd = ", yEnd))
       debug("theImage dimensions: ", size(theImage)[1], " ",
-                      size(theImage[1])[1], " ", size(theImage[1])[2])
+            size(theImage[1])[1], " ", size(theImage[1])[2]) 
 
-      # Getting a slice of theImage array
-
-      image = Array(Uint8, (convert(Int, length(theImage)), 
-                            convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
-      debug("image size: ", size(image))
-      for z in 1:length(theImage)
-        for x in 1 : (xEnd - xStart)
-          for y in 1 : (yEnd - yStart)
-            image[z, x, y] = theImage[z][x + xStart, y + yStart]
-          end
-        end
-      end
-      
-      
-      nz, nx, ny = size(image)
-      chains3D = Array(Uint8, 0)
-      zStart = startImage
-      for y in 0:(ny - 1)
-        for x in 0:(nx - 1)
-          for z in 0:(nz - 1)
-            if(image[z + 1, x + 1, y + 1] == foreground)
-              push!(chains3D, x + nx * (y + ny * z))
+      chains3D = Array(Int, 0)
+      for z in 1 : length(theImage)
+        for y in 1 : (yEnd - yStart)
+          for x in 1 : (xEnd - xStart)
+            if(theImage[z][x + xStart, y + yStart] == foreground)
+              index = convert(Int, x - 1) + convert(Int, y - 1) * 
+                        imageDx + convert(Int, z - 1) * (imageDx * imageDy)
+              push!(chains3D, index)
             end
           end
         end
-      end
+      end 
       
-
       if(length(chains3D) != 0)
         # Computing boundary chain
         debug("chains3d = ", chains3D)
@@ -271,9 +262,7 @@ function imageConversionProcess(sliceDirectory,
 
         back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock,
                                         "-", yBlock, "_", startImage, "_", endImage)
-        Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
-
-        
+        Model2Obj.writeToObj(V_back, FV_back, back_outputFilename) 
       else
         debug("Model is empty")
       end
