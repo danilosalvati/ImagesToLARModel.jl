@@ -201,12 +201,11 @@ function imageConversionProcess(sliceDirectory,
             size(theImage[1])[1], " ", size(theImage[1])[2]) 
 
       chains3D = Array(Int, 0)
-      for z in 1 : length(theImage)
-        for y in 1 : (yEnd - yStart)
-          for x in 1 : (xEnd - xStart)
+      for z in 1 : imageDz
+        for y in 1 : imageDy
+          for x in 1 : imageDx
             if(theImage[z][x + xStart, y + yStart] == foreground)
-              index = convert(Int, x - 1) + convert(Int, y - 1) * 
-                        imageDx + convert(Int, z - 1) * (imageDx * imageDy)
+              index = x - 1 + (y - 1) * imageDx + (z - 1) * (imageDx * imageDy)
               push!(chains3D, index)
             end
           end
@@ -223,7 +222,7 @@ function imageConversionProcess(sliceDirectory,
           mkdir(string(outputDirectory, "MODELS"))
         catch
         end
-        models = LARUtils.computeModelAndBoundaries(nx, ny, nz,
+        models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz,
                                                     xStart, yStart, zStart, objectBoundaryChain)
 
         V, FV = models[1][1] # inside model

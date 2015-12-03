@@ -1018,12 +1018,11 @@ This is the code for getting foreground pixels:
 
 @D get image slice
 @{chains3D = Array(Int, 0)
-for z in 1 : length(theImage)
-  for y in 1 : (yEnd - yStart)
-    for x in 1 : (xEnd - xStart)
+for z in 1 : imageDz
+  for y in 1 : imageDy
+    for x in 1 : imageDx
       if(theImage[z][x + xStart, y + yStart] == foreground)
-        index = convert(Int, x - 1) + convert(Int, y - 1) * 
-		  imageDx + convert(Int, z - 1) * (imageDx * imageDy)
+        index = x - 1 + (y - 1) * imageDx + (z - 1) * (imageDx * imageDy)
 	push!(chains3D, index)
       end
     end
@@ -1043,7 +1042,7 @@ Now that we have full cells for the geometry, we can convert them into a \textit
 After model computation, next step is getting vertices and faces from model cells writing results to file. However, as we have already said, we are only interested in boundaries of the final model while now we have only boundaries of a single block. Consequently, we have to separate boundaries from the inner faces of the block on different files (boundaries separation will be explained in section~\ref{sec:LARUtils}). As we can see later, we will merge boundaries together deleting common faces on both block borders, obtaining a model without internal faces. These are pieces of code for getting the inner block model with the boundaries and for file writing:
 
 @D get inner model and boundaries
-@{models = LARUtils.computeModelAndBoundaries(nx, ny, nz,
+@{models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz,
 					    xStart, yStart, zStart, objectBoundaryChain)
 
 V, FV = models[1][1] # inside model
