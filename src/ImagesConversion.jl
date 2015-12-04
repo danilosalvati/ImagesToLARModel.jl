@@ -285,8 +285,8 @@ function mergeBoundariesProcess(modelDirectory,
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
   """
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
 
       # Merging right Boundary
       firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock,
@@ -356,8 +356,8 @@ function mergeBlocksProcess(modelDirectory,
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
   """
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
 
       blockCoordsV = string(xBlock, "-", yBlock, "_", startImage,
                             "_", endImage, "_vtx.stl")
@@ -410,8 +410,8 @@ function smoothBlocksProcess(modelDirectory,
   imageWidth, imageHeight: sizes of the images
   """
 
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
 
       # Loading the current block model
       blockFileV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
@@ -490,8 +490,8 @@ function smoothBlocks(modelDirectory,
     for zBlock in 0:(imageDepth / imageDz - 1)
       startImage = endImage
       endImage = startImage + imageDz
-      for xBlock in 0:(imageHeight / imageDx - 1)
-        for yBlock in 0:(imageWidth / imageDy - 1)
+      for xBlock in 0:(imageWidth / imageDx - 1)
+        for yBlock in 0:(imageHeight / imageDy - 1)
 
           f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
                        startImage, "_", endImage, "_vtx.stl")

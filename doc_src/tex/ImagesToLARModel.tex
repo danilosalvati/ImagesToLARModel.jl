@@ -1153,8 +1153,8 @@ Next step of our pipeline consists in \textit{boundaries merge}. In fact, we hav
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
   """
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
 
       # Merging right Boundary
       firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock,
@@ -1255,8 +1255,8 @@ At this step of the computation, we have files with the inner parts of a single 
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
   """
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
 
       blockCoordsV = string(xBlock, "-", yBlock, "_", startImage,
 			    "_", endImage, "_vtx.stl")
@@ -1325,8 +1325,8 @@ Now we have obtained models without internal boundaries between blocks and witho
   imageWidth, imageHeight: sizes of the images
   """
 
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
 
       # Loading the current block model
       blockFileV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
@@ -1418,8 +1418,8 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
     for zBlock in 0:(imageDepth / imageDz - 1)
       startImage = endImage
       endImage = startImage + imageDz
-      for xBlock in 0:(imageHeight / imageDx - 1)
-        for yBlock in 0:(imageWidth / imageDy - 1)
+      for xBlock in 0:(imageWidth / imageDx - 1)
+        for yBlock in 0:(imageHeight / imageDy - 1)
 
           f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
                        startImage, "_", endImage, "_vtx.stl")
