@@ -1009,7 +1009,7 @@ Here \textit{xStart} and \textit{yStart} are the absolute coordinates of the mod
     \end{array}
     $
    \hfill
-   \caption{Transformation of a matrix resulting from a 2x2x2 grid into a linearized array (with cells indexes) (a) First example (b) Second example DA CORREGGERE CON I VALORI CORRETTI}
+   \caption{Transformation of a matrix resulting from a 2x2x2 grid into a linearized array (with cells indexes) (a) First example (b) Second example}
    \label{fig:linearizedMatrix}
 \end{figure}
 
@@ -1215,6 +1215,7 @@ all merges are executed by the function \texttt{mergeBoundariesAndRemoveDuplicat
 
     V, FV = Model2Obj.getModelsFromFiles([firstPathV, secondPathV],
 					 [firstPathFV, secondPathFV])
+    V, FV = LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
 
     # Writing model to file
     rm(firstPathV)
@@ -1280,6 +1281,7 @@ At this step of the computation, we have files with the inner parts of a single 
                  string(modelDirectory, "/model_output_", blockCoordsFV)]
 
       V, FV = Model2Obj.getModelsFromFiles(arrayV, arrayFV)
+      V, FV = LARUtils.removeDoubleVerticesAndFaces(V, FV, 0)
       for i in 1:length(arrayV)
         if(isfile(arrayV[i]))
           rm(arrayV[i])
@@ -1337,6 +1339,7 @@ Now we have obtained models without internal boundaries between blocks and witho
       if isfile(blockFileV)
         # Loading only model of the current block
         blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
+        blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV, blockModelFV, 0)
 
         # Loading a unique model from this block and its adjacents
         modelsFiles = Array(String, 0)
@@ -1353,6 +1356,7 @@ Now we have obtained models without internal boundaries between blocks and witho
         modelsFilesFV = map((s) -> string(s, "_faces.stl"), modelsFiles)
 
         modelV, modelFV = Model2Obj.getModelsFromFiles(modelsFilesV, modelsFilesFV)
+        modelV, modelFV = LARUtils.removeDoubleVerticesAndFaces(modelV, modelFV, 0)
 
         # Now I have to save indices of vertices of the current block model
         blockVerticesIndices = Array(Int, 0)
@@ -2936,7 +2940,7 @@ function getModelsFromFiles(arrayV, arrayFV)
       close(f_V)
     end
   end
-  return LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
+  return V, FV
 end
 end
 @}

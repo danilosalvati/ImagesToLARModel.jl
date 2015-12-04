@@ -342,6 +342,6 @@ function getModelsFromFiles(arrayV, arrayFV)
       close(f_V)
     end
   end
-  return LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
+  return V, FV
 end
 end

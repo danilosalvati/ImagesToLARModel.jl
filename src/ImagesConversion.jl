@@ -330,6 +330,7 @@ function mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 
     V, FV = Model2Obj.getModelsFromFiles([firstPathV, secondPathV],
                                          [firstPathFV, secondPathFV])
+    V, FV = LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
 
     # Writing model to file
     rm(firstPathV)
@@ -381,6 +382,7 @@ function mergeBlocksProcess(modelDirectory,
                  string(modelDirectory, "/model_output_", blockCoordsFV)]
 
       V, FV = Model2Obj.getModelsFromFiles(arrayV, arrayFV)
+      V, FV = LARUtils.removeDoubleVerticesAndFaces(V, FV, 0)
       for i in 1:length(arrayV)
         if(isfile(arrayV[i]))
           rm(arrayV[i])
@@ -422,6 +424,7 @@ function smoothBlocksProcess(modelDirectory,
       if isfile(blockFileV)
         # Loading only model of the current block
         blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
+        blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV, blockModelFV, 0)
 
         # Loading a unique model from this block and its adjacents
         modelsFiles = Array(String, 0)
@@ -438,6 +441,7 @@ function smoothBlocksProcess(modelDirectory,
         modelsFilesFV = map((s) -> string(s, "_faces.stl"), modelsFiles)
 
         modelV, modelFV = Model2Obj.getModelsFromFiles(modelsFilesV, modelsFilesFV)
+        modelV, modelFV = LARUtils.removeDoubleVerticesAndFaces(modelV, modelFV, 0)
 
         # Now I have to save indices of vertices of the current block model
         blockVerticesIndices = Array(Int, 0)
