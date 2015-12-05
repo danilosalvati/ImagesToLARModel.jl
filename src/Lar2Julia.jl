@@ -4,7 +4,7 @@ import JSON
 
 using Logging
 
-export larBoundaryChain, cscChainToCellList 
+export larBoundaryChain, cscChainToCellList, relationshipListToCSC 
 
 function larBoundaryChain(cscBoundaryMat, brcCellList)
   """

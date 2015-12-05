@@ -3,7 +3,7 @@ module LARUtils
 using Logging
 
 export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
-    computeModel, computeModelAndBoundaries
+    computeModelAndBoundaries
 
 
 function ind(x, y, z, nx, ny)

@@ -13,7 +13,7 @@ using PyCall
 
 import JSON
 
-export computeOriented3Border, writeBorder, getOriented3BorderPath
+export computeOriented3Border, writeBorder, getOriented3BorderPath, getBorderMatrix
 
 @pyimport sys
 # Search for python modules in package folder

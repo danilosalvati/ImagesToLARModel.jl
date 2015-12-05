@@ -1,4 +1,5 @@
 module Smoother
+export smoothModel
 
 function adjVerts(V, FV)
   """

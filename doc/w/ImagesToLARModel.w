@@ -1479,7 +1479,7 @@ using PyCall
 
 import JSON
 
-export computeOriented3Border, writeBorder, getOriented3BorderPath
+export computeOriented3Border, writeBorder, getOriented3BorderPath, getBorderMatrix
 
 @@pyimport sys
 # Search for python modules in package folder
@@ -1614,7 +1614,7 @@ These are modules used for \texttt{Lar2Julia} and the public functions
 
 using Logging
 
-export larBoundaryChain, cscChainToCellList @}
+export larBoundaryChain, cscChainToCellList, relationshipListToCSC @}
 
 \subsection{Get boundary chain from a model}\label{sec:boundaryChain}
 
@@ -1751,7 +1751,7 @@ These are modules used in \texttt{LARUtils} and the functions exported
 @{using Logging
 
 export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
-    computeModel, computeModelAndBoundaries
+    computeModelAndBoundaries
 @}
 
 \subsection{Transformation from matrix to array}\label{sec:matrixTransform}
@@ -2962,6 +2962,7 @@ end
 
 @O src/Smoother.jl
 @{module Smoother
+export smoothModel
 
 @< get adjacent vertices @>
 
