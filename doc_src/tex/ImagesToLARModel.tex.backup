@@ -954,43 +954,24 @@ Now we can start iterating on other blocks of the grid:
 
 @D block iteration
 @{for xBlock in 0:(imageWidth / imageDx - 1)
-for yBlock in 0:(imageHeight / imageDy - 1)
-
-  xStart = xBlock * imageDx
-  yStart = yBlock * imageDy
-  zStart = startImage
+  for yBlock in 0:(imageHeight / imageDy - 1)
   
-  xEnd = xStart + imageDx
-  yEnd = yStart + imageDy
+    xStart = xBlock * imageDx
+    yStart = yBlock * imageDy
+    zStart = startImage
+    
+    xEnd = xStart + imageDx
+    yEnd = yStart + imageDy
   
-  imageDz = length(theImage)
+    imageDz = length(theImage)
   
-  debug("***********")
-  debug(string("xStart = ", xStart, " xEnd = ", xEnd))
-  debug(string("yStart = ", yStart, " yEnd = ", yEnd))
-  debug("theImage dimensions: ", size(theImage)[1], " ",
-	size(theImage[1])[1], " ", size(theImage[1])[2]) @}
+    debug("***********")
+    debug(string("xStart = ", xStart, " xEnd = ", xEnd))
+    debug(string("yStart = ", yStart, " yEnd = ", yEnd))
+    debug("theImage dimensions: ", size(theImage)[1], " ",
+	  size(theImage[1])[1], " ", size(theImage[1])[2]) @}
 
-
-
-@D get image slice
-@{# Getting a slice of theImage array
-
-image = Array(Uint8, (convert(Int, length(theImage)), 
-		      convert(Int, xEnd - xStart), convert(Int, yEnd - yStart)))
-debug("image size: ", size(image))
-for z in 1:length(theImage)
-  for x in 1 : (xEnd - xStart)
-    for y in 1 : (yEnd - yStart)
-      image[z, x, y] = theImage[z][x + xStart, y + yStart]
-    end
-  end
-end
-@}
-
-Here \textit{xStart} and \textit{yStart} are the absolute coordinates of the model and are calculated from the block coordinates. At the end of this process, we have an array called \texttt{image} with size $(imageDz, imageDx, imageDy)$.
-
-Now we can get the value of the single pixel into this array and, if it represents a foreground point, put it into an array called \texttt{chain3D}. This structure contains indexes of the linearized array created from the matrix. In Figure~\ref{fig:linearizedMatrix} there is a sample conversion from the matrix to the array
+Here \textit{xStart} and \textit{yStart} are the absolute coordinates of the model and are calculated from the block coordinates. Now we can get the current slice for the entire image (with size $(imageDx, imageDy, imageDz)$), check values for every single pixel into it and, if it represents a foreground point, put it into an array called \texttt{chain3D}. This structure contains indexes of the linearized array created from the matrix. In Figure~\ref{fig:linearizedMatrix} there is a sample conversion from the matrix to the array
 
 \begin{figure}[htb] %  figure placement: here, top, bottom
    \centering
@@ -1032,24 +1013,21 @@ Now we can get the value of the single pixel into this array and, if it represen
    \label{fig:linearizedMatrix}
 \end{figure}
 
-As we can see from that figure, from a 2x2x2 grid we can obtain eight values for the single block (or \textbf{cell}), where the indexes for the foreground pixels represent indexes of non-empty cells in a 2x2x2 cuboidal geometry
-
+As we can see from that figure, from a 2x2x2 grid we can obtain eight values for the single block (or \textbf{cell}), where the indexes for the foreground pixels represent indexes of non-empty cells in a 2x2x2 cuboidal geometry.
 This is the code for getting foreground pixels:
 
-@D get foreground pixels
-@{nz, nx, ny = size(image)
-chains3D = Array(Uint8, 0)
-zStart = startImage
-for y in 0:(ny - 1)
-  for x in 0:(nx - 1)
-    for z in 0:(nz - 1)
-      if(image[z + 1, x + 1, y + 1] == foreground)
-	push!(chains3D, LARUtils.ind(x, y, z, nx, ny))
+@D get image slice
+@{chains3D = Array(Int, 0)
+for z in 1 : imageDz
+  for y in 1 : imageDy
+    for x in 1 : imageDx
+      if(theImage[z][x + xStart, y + yStart] == foreground)
+        index = x - 1 + (y - 1) * imageDx + (z - 1) * (imageDx * imageDy)
+	push!(chains3D, index)
       end
     end
   end
-end
-@}
+end @}
 
 Now that we have full cells for the geometry, we can convert them into a \textit{LAR model}. In particular, we are interested in cell boundaries for every block (as we want to obtain only the boundaries for the final model) so we can call function \texttt{larBoundaryChain} from \texttt{Lar2Julia} module (which will be explained in section~\ref{sec:Lar2Julia}). In Figure~\ref{fig:sampleBlocks} there are some examples of models extracted from a single $2 \times 2 \times 2$ block.
 
@@ -1064,7 +1042,7 @@ Now that we have full cells for the geometry, we can convert them into a \textit
 After model computation, next step is getting vertices and faces from model cells writing results to file. However, as we have already said, we are only interested in boundaries of the final model while now we have only boundaries of a single block. Consequently, we have to separate boundaries from the inner faces of the block on different files (boundaries separation will be explained in section~\ref{sec:LARUtils}). As we can see later, we will merge boundaries together deleting common faces on both block borders, obtaining a model without internal faces. These are pieces of code for getting the inner block model with the boundaries and for file writing:
 
 @D get inner model and boundaries
-@{models = LARUtils.computeModelAndBoundaries(nx, ny, nz,
+@{models = LARUtils.computeModelAndBoundaries(imageDx, imageDy, imageDz,
 					    xStart, yStart, zStart, objectBoundaryChain)
 
 V, FV = models[1][1] # inside model
@@ -1104,9 +1082,7 @@ Model2Obj.writeToObj(V_front, FV_front, front_outputFilename)
 
 back_outputFilename = string(outputDirectory, "MODELS/back_output_", xBlock,
 				"-", yBlock, "_", startImage, "_", endImage)
-Model2Obj.writeToObj(V_back, FV_back, back_outputFilename)
-
-@}
+Model2Obj.writeToObj(V_back, FV_back, back_outputFilename) @}
 
 This is the \texttt{processFunction} for this pipeline step
 
@@ -1123,23 +1099,11 @@ This is the \texttt{processFunction} for this pipeline step
   """
 
   @< image read and centroids sort @>
-
-  for xBlock in 0:(imageWidth / imageDx - 1)
-    for yBlock in 0:(imageHeight / imageDy - 1)
-      xStart = xBlock * imageDx
-      yStart = yBlock * imageDy
-      xEnd = xStart + imageDx
-      yEnd = yStart + imageDy
-      debug("***********")
-      debug(string("xStart = ", xStart, " xEnd = ", xEnd))
-      debug(string("yStart = ", yStart, " yEnd = ", yEnd))
-      debug("theImage dimensions: ", size(theImage)[1], " ",
-		      size(theImage[1])[1], " ", size(theImage[1])[2])
+  
+  @< block iteration @>
 
       @< get image slice @>
       
-      @< get foreground pixels @>
-
       if(length(chains3D) != 0)
         # Computing boundary chain
         debug("chains3d = ", chains3D)
@@ -1189,8 +1153,8 @@ Next step of our pipeline consists in \textit{boundaries merge}. In fact, we hav
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
   """
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
 
       # Merging right Boundary
       firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock,
@@ -1251,6 +1215,7 @@ all merges are executed by the function \texttt{mergeBoundariesAndRemoveDuplicat
 
     V, FV = Model2Obj.getModelsFromFiles([firstPathV, secondPathV],
 					 [firstPathFV, secondPathFV])
+    V, FV = LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
 
     # Writing model to file
     rm(firstPathV)
@@ -1291,8 +1256,8 @@ At this step of the computation, we have files with the inner parts of a single 
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
   """
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
 
       blockCoordsV = string(xBlock, "-", yBlock, "_", startImage,
 			    "_", endImage, "_vtx.stl")
@@ -1316,6 +1281,7 @@ At this step of the computation, we have files with the inner parts of a single 
                  string(modelDirectory, "/model_output_", blockCoordsFV)]
 
       V, FV = Model2Obj.getModelsFromFiles(arrayV, arrayFV)
+      V, FV = LARUtils.removeDoubleVerticesAndFaces(V, FV, 0)
       for i in 1:length(arrayV)
         if(isfile(arrayV[i]))
           rm(arrayV[i])
@@ -1361,8 +1327,8 @@ Now we have obtained models without internal boundaries between blocks and witho
   imageWidth, imageHeight: sizes of the images
   """
 
-  for xBlock in 0:(imageHeight / imageDx - 1)
-    for yBlock in 0:(imageWidth / imageDy - 1)
+  for xBlock in 0:(imageWidth / imageDx - 1)
+    for yBlock in 0:(imageHeight / imageDy - 1)
 
       # Loading the current block model
       blockFileV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
@@ -1373,6 +1339,8 @@ Now we have obtained models without internal boundaries between blocks and witho
       if isfile(blockFileV)
         # Loading only model of the current block
         blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
+        blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV,
+						blockModelFV, 0)
 
         # Loading a unique model from this block and its adjacents
         modelsFiles = Array(String, 0)
@@ -1389,6 +1357,7 @@ Now we have obtained models without internal boundaries between blocks and witho
         modelsFilesFV = map((s) -> string(s, "_faces.stl"), modelsFiles)
 
         modelV, modelFV = Model2Obj.getModelsFromFiles(modelsFilesV, modelsFilesFV)
+        modelV, modelFV = LARUtils.removeDoubleVerticesAndFaces(modelV, modelFV, 0)
 
         # Now I have to save indices of vertices of the current block model
         blockVerticesIndices = Array(Int, 0)
@@ -1454,8 +1423,8 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
     for zBlock in 0:(imageDepth / imageDz - 1)
       startImage = endImage
       endImage = startImage + imageDz
-      for xBlock in 0:(imageHeight / imageDx - 1)
-        for yBlock in 0:(imageWidth / imageDy - 1)
+      for xBlock in 0:(imageWidth / imageDx - 1)
+        for yBlock in 0:(imageHeight / imageDy - 1)
 
           f_V = string(modelDirectory, "/smoothed_output_", xBlock, "-", yBlock, "_",
                        startImage, "_", endImage, "_vtx.stl")
@@ -1511,7 +1480,7 @@ using PyCall
 
 import JSON
 
-export computeOriented3Border, writeBorder, getOriented3BorderPath
+export computeOriented3Border, writeBorder, getOriented3BorderPath, getBorderMatrix
 
 @@pyimport sys
 # Search for python modules in package folder
@@ -1646,7 +1615,7 @@ These are modules used for \texttt{Lar2Julia} and the public functions
 
 using Logging
 
-export larBoundaryChain, cscChainToCellList @}
+export larBoundaryChain, cscChainToCellList, relationshipListToCSC @}
 
 \subsection{Get boundary chain from a model}\label{sec:boundaryChain}
 
@@ -1783,7 +1752,7 @@ These are modules used in \texttt{LARUtils} and the functions exported
 @{using Logging
 
 export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
-    computeModel, computeModelAndBoundaries
+    computeModelAndBoundaries
 @}
 
 \subsection{Transformation from matrix to array}\label{sec:matrixTransform}
@@ -2526,6 +2495,154 @@ end @}
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================
 
+This module contains functions used for reading/writing LAR models into obj files on disk
+
+\subsection{Writing models to file}\label{sec:writeObj}
+
+Up to now we have seen how to manipulate LAR models obtaining a three-dimensional representation for our stack of images. However we have not seen how to visualize them using external software yet. We have chosen the \textit{wavefront obj file format} for external visualization, which is very simple and common. The syntax used is the following:
+\begin{itemize}
+ \item All vertices are described with their coordinates and written on a single row according to the following syntax: $\texttt{v xCoord yCoord zCoord}$
+ \item All faces are described with their vertex index (calculated from their row) according to the following syntax: $\texttt{f vertex1 vertex2 \ldots vertexn}$
+\end{itemize}
+
+In Figure~\ref{fig:objSample} there is an example of an obj file
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/objSample.png}
+   \caption{Obj sample file}
+   \label{fig:objSample}
+\end{figure}
+
+We can see that this kind of representation is very similar to the LAR representation schema, so we just have to read every element of V and FV arrays and write them on disk. Because of we will use these informations a lot, it is more convenient to save the vertices and the faces on different files, so they can be loaded with less efforts. This is code used by the library:
+
+@D write obj files
+@{function writeToObj(V, FV, outputFilename)
+  """
+  Take a LAR model and write it on obj file
+
+  V: array containing vertices coordinates
+  FV: array containing faces
+  outputFilename: prefix for the output files
+  """
+
+  if (length(V) != 0)
+    outputVtx = string(outputFilename, "_vtx.stl")
+    outputFaces = string(outputFilename, "_faces.stl")
+
+    fileVertex = open(outputVtx, "w")
+    fileFaces = open(outputFaces, "w")
+
+    for v in V
+      write(fileVertex, "v ")
+      write(fileVertex, string(v[1], " "))
+      write(fileVertex, string(v[2], " "))
+      write(fileVertex, string(v[3], "\n"))
+    end
+
+    for f in FV
+
+      write(fileFaces, "f ")
+      write(fileFaces, string(f[1], " "))
+      write(fileFaces, string(f[2], " "))
+      write(fileFaces, string(f[3], "\n"))
+    end
+
+    close(fileVertex)
+    close(fileFaces)
+
+  end
+
+end @}
+
+\subsection{Merging block models}\label{sec:mergeObj}
+
+Now we have seen how to write on disk a LAR model using the \textit{wavefront obj file format}, however, as we have already seen, we have a lot of models from every block; so we need a function for the creation of the final merged model. The code which executes this task is very simple; this is the function:
+
+@D serial file merge
+@{function mergeObj(modelDirectory)
+  """
+  Merge stl files in a single obj file
+
+  modelDirectory: directory containing models
+  """
+
+  files = readdir(modelDirectory)
+  vertices_files = files[find(s -> contains(s, string("_vtx.stl")), files)]
+  faces_files = files[find(s -> contains(s, string("_faces.stl")), files)]
+  obj_file = open(string(modelDirectory, "/", "model.obj"), "w") # Output file
+
+  vertices_counts = Array(Int64, length(vertices_files))
+  number_of_vertices = 0
+  for i in 1:length(vertices_files)
+    vtx_file = vertices_files[i]
+    f = open(string(modelDirectory, "/", vtx_file))
+
+    # Writing vertices on the obj file
+    for ln in eachline(f)
+      splitted = split(ln)
+      write(obj_file, "v ")
+      write(obj_file, string(convert(Int,round(parse(splitted[2]) * 10)), " "))
+      write(obj_file, string(convert(Int,round(parse(splitted[3]) * 10)), " "))
+      write(obj_file, string(convert(Int,round(parse(splitted[4]) * 10)), "\n"))
+      number_of_vertices += 1
+    end
+    # Saving number of vertices
+    vertices_counts[i] = number_of_vertices
+    close(f)
+  end
+
+  for i in 1 : length(faces_files)
+    faces_file = faces_files[i]
+    f = open(string(modelDirectory, "/", faces_file))
+    for ln in eachline(f)
+      splitted = split(ln)
+      write(obj_file, "f ")
+      if i > 1
+        write(obj_file, string(parse(splitted[2]) + vertices_counts[i - 1], " "))
+        write(obj_file, string(parse(splitted[3]) + vertices_counts[i - 1], " "))
+        write(obj_file, string(parse(splitted[4]) + vertices_counts[i - 1]))
+      else
+        write(obj_file, string(splitted[2], " "))
+        write(obj_file, string(splitted[3], " "))
+        write(obj_file, splitted[4])
+      end
+      write(obj_file, "\n")
+    end
+    close(f)
+  end
+  close(obj_file)
+
+  # Removing all tmp files
+  for vtx_file in vertices_files
+    rm(string(modelDirectory, "/", vtx_file))
+  end
+
+  for fcs_file in faces_files
+    rm(string(modelDirectory, "/", fcs_file))
+  end
+
+end @}
+
+As we can see, we take all files contained into the model folder (distinguishing between files containing vertices from those containing faces) and write all their lines into the final model file. However this is simply for vertices files, while it is a bit complicated for faces, because it is necessary to change their indexes according to the current vertices positions into the file. So we need to memorize the offset for every file counting the number of vertices added at every time we open a new file containing vertices. Moreover we can see that we convert vertices coordinates into integer values; this is useful because some softwares do not read float vertices coordinates, so we first make the model ten times bigger (so we still have the first decimal number) and then round it.
+
+The creation of this final model is quite slow, so we can try to speedup the entire software parallelizing it. In the next part we will see how this can be done.
+
+\subsubsection{Parallel merging of obj files}\label{sec:mergeObjParallel}
+
+Now we will see how to parallelize the final file merging. However this is useful only for certain conditions; in fact in traditional filesystems the disk can be accessed from only one process at the same time, so parallelizing this task is totally useless. However for parallel filesystems it is a different matter because we can have parallel writes on storage.
+
+The first simple algorithm we can think for parallel file merging, takes two files for every process and merge them creating a unique file. Then, this process can be repeated until we have only one final file. In Figure~\ref{fig:firstParallelAlgorithm} there is a simple schema for this algorithm.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/FirstParallelAlgorithm.png}
+   \caption{The first parallel algorithm for file merge. Black circles represent the original files, while circles with the cross, represent merged files}
+   \label{fig:firstParallelAlgorithm}
+\end{figure}
+
+How we can see in that figure, if we have a process for every merge operation and sixteen files, we will have eight processes for the firsts merges, four processes for the seconds merges, two processes for the third step and one process for the final merge. Speaking in a general way, told $n$ the number of files we want to merge, we will use $\lfloor n/2 \rfloor$ processes
+
 %===============================================================================
 \section{Exporting the library}
 %===============================================================================
@@ -2630,113 +2747,13 @@ end
 @O src/Model2Obj.jl
 @{module Model2Obj
 
-import LARUtils
-
 using Logging
 
 export writeToObj, mergeObj, mergeObjParallel
 
-function writeToObj(V, FV, outputFilename)
-  """
-  Take a LAR model and write it on obj file
+@< write obj files @>
 
-  V: array containing vertices coordinates
-  FV: array containing faces
-  outputFilename: prefix for the output files
-  """
-
-  if (length(V) != 0)
-    outputVtx = string(outputFilename, "_vtx.stl")
-    outputFaces = string(outputFilename, "_faces.stl")
-
-    fileVertex = open(outputVtx, "w")
-    fileFaces = open(outputFaces, "w")
-
-    for v in V
-      write(fileVertex, "v ")
-      write(fileVertex, string(v[1], " "))
-      write(fileVertex, string(v[2], " "))
-      write(fileVertex, string(v[3], "\n"))
-    end
-
-    for f in FV
-
-      write(fileFaces, "f ")
-      write(fileFaces, string(f[1], " "))
-      write(fileFaces, string(f[2], " "))
-      write(fileFaces, string(f[3], "\n"))
-    end
-
-    close(fileVertex)
-    close(fileFaces)
-
-  end
-
-end
-
-function mergeObj(modelDirectory)
-  """
-  Merge stl files in a single obj file
-
-  modelDirectory: directory containing models
-  """
-
-  files = readdir(modelDirectory)
-  vertices_files = files[find(s -> contains(s, string("_vtx.stl")), files)]
-  faces_files = files[find(s -> contains(s, string("_faces.stl")), files)]
-  obj_file = open(string(modelDirectory, "/", "model.obj"), "w") # Output file
-
-  vertices_counts = Array(Int64, length(vertices_files))
-  number_of_vertices = 0
-  for i in 1:length(vertices_files)
-    vtx_file = vertices_files[i]
-    f = open(string(modelDirectory, "/", vtx_file))
-
-    # Writing vertices on the obj file
-    for ln in eachline(f)
-      splitted = split(ln)
-      write(obj_file, "v ")
-      write(obj_file, string(convert(Int,round(parse(splitted[2]) * 10)), " "))
-      write(obj_file, string(convert(Int,round(parse(splitted[3]) * 10)), " "))
-      write(obj_file, string(convert(Int,round(parse(splitted[4]) * 10)), "\n"))
-      number_of_vertices += 1
-    end
-    # Saving number of vertices
-    vertices_counts[i] = number_of_vertices
-    close(f)
-  end
-
-  for i in 1 : length(faces_files)
-    faces_file = faces_files[i]
-    f = open(string(modelDirectory, "/", faces_file))
-    for ln in eachline(f)
-      splitted = split(ln)
-      write(obj_file, "f ")
-      if i > 1
-        write(obj_file, string(parse(splitted[2]) + vertices_counts[i - 1], " "))
-        write(obj_file, string(parse(splitted[3]) + vertices_counts[i - 1], " "))
-        write(obj_file, string(parse(splitted[4]) + vertices_counts[i - 1]))
-      else
-        write(obj_file, string(splitted[2], " "))
-        write(obj_file, string(splitted[3], " "))
-        write(obj_file, splitted[4])
-      end
-      write(obj_file, "\n")
-    end
-    close(f)
-  end
-  close(obj_file)
-
-  # Removing all tmp files
-  for vtx_file in vertices_files
-    rm(string(modelDirectory, "/", vtx_file))
-  end
-
-  for fcs_file in faces_files
-    rm(string(modelDirectory, "/", fcs_file))
-  end
-
-end
+@< serial file merge @>
 
 function assignTasks(startInd, endInd, taskArray)
   """
@@ -2972,7 +2989,7 @@ function getModelsFromFiles(arrayV, arrayFV)
       close(f_V)
     end
   end
-  return LARUtils.removeVerticesAndFacesFromBoundaries(V, FV)
+  return V, FV
 end
 end
 @}
@@ -2994,6 +3011,7 @@ end
 
 @O src/Smoother.jl
 @{module Smoother
+export smoothModel
 
 @< get adjacent vertices @>
 

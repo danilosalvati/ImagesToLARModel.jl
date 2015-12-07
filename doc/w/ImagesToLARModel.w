@@ -1339,7 +1339,8 @@ Now we have obtained models without internal boundaries between blocks and witho
       if isfile(blockFileV)
         # Loading only model of the current block
         blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
-        blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV, blockModelFV, 0)
+        blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV,
+						blockModelFV, 0)
 
         # Loading a unique model from this block and its adjacents
         modelsFiles = Array(String, 0)
@@ -2494,6 +2495,161 @@ end @}
 \section{Model2Obj}\label{sec:Model2Obj}
 %===============================================================================
 
+This module contains functions used for reading/writing LAR models into obj files on disk
+
+\subsection{Writing models to file}\label{sec:writeObj}
+
+Up to now we have seen how to manipulate LAR models obtaining a three-dimensional representation for our stack of images. However we have not seen how to visualize them using external software yet. We have chosen the \textit{wavefront obj file format} for external visualization, which is very simple and common. The syntax used is the following:
+\begin{itemize}
+ \item All vertices are described with their coordinates and written on a single row according to the following syntax: $\texttt{v xCoord yCoord zCoord}$
+ \item All faces are described with their vertex index (calculated from their row) according to the following syntax: $\texttt{f vertex1 vertex2 \ldots vertexn}$
+\end{itemize}
+
+In Figure~\ref{fig:objSample} there is an example of an obj file
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/objSample.png}
+   \caption{Obj sample file}
+   \label{fig:objSample}
+\end{figure}
+
+We can see that this kind of representation is very similar to the LAR representation schema, so we just have to read every element of V and FV arrays and write them on disk. Because of we will use these informations a lot, it is more convenient to save the vertices and the faces on different files, so they can be loaded with less efforts. This is code used by the library:
+
+@D write obj files
+@{function writeToObj(V, FV, outputFilename)
+  """
+  Take a LAR model and write it on obj file
+
+  V: array containing vertices coordinates
+  FV: array containing faces
+  outputFilename: prefix for the output files
+  """
+
+  if (length(V) != 0)
+    outputVtx = string(outputFilename, "_vtx.stl")
+    outputFaces = string(outputFilename, "_faces.stl")
+
+    fileVertex = open(outputVtx, "w")
+    fileFaces = open(outputFaces, "w")
+
+    for v in V
+      write(fileVertex, "v ")
+      write(fileVertex, string(v[1], " "))
+      write(fileVertex, string(v[2], " "))
+      write(fileVertex, string(v[3], "\n"))
+    end
+
+    for f in FV
+
+      write(fileFaces, "f ")
+      write(fileFaces, string(f[1], " "))
+      write(fileFaces, string(f[2], " "))
+      write(fileFaces, string(f[3], "\n"))
+    end
+
+    close(fileVertex)
+    close(fileFaces)
+
+  end
+
+end @}
+
+\subsection{Merging block models}\label{sec:mergeObj}
+
+Now we have seen how to write on disk a LAR model using the \textit{wavefront obj file format}, however, as we have already seen, we have a lot of models from every block; so we need a function for the creation of the final merged model. The code which executes this task is very simple; this is the function:
+
+@D serial file merge
+@{function mergeObj(modelDirectory)
+  """
+  Merge stl files in a single obj file
+
+  modelDirectory: directory containing models
+  """
+
+  files = readdir(modelDirectory)
+  vertices_files = files[find(s -> contains(s, string("_vtx.stl")), files)]
+  faces_files = files[find(s -> contains(s, string("_faces.stl")), files)]
+  obj_file = open(string(modelDirectory, "/", "model.obj"), "w") # Output file
+
+  vertices_counts = Array(Int64, length(vertices_files))
+  number_of_vertices = 0
+  for i in 1:length(vertices_files)
+    vtx_file = vertices_files[i]
+    f = open(string(modelDirectory, "/", vtx_file))
+
+    # Writing vertices on the obj file
+    for ln in eachline(f)
+      splitted = split(ln)
+      write(obj_file, "v ")
+      write(obj_file, string(convert(Int,round(parse(splitted[2]) * 10)), " "))
+      write(obj_file, string(convert(Int,round(parse(splitted[3]) * 10)), " "))
+      write(obj_file, string(convert(Int,round(parse(splitted[4]) * 10)), "\n"))
+      number_of_vertices += 1
+    end
+    # Saving number of vertices
+    vertices_counts[i] = number_of_vertices
+    close(f)
+  end
+
+  for i in 1 : length(faces_files)
+    faces_file = faces_files[i]
+    f = open(string(modelDirectory, "/", faces_file))
+    for ln in eachline(f)
+      splitted = split(ln)
+      write(obj_file, "f ")
+      if i > 1
+        write(obj_file, string(parse(splitted[2]) + vertices_counts[i - 1], " "))
+        write(obj_file, string(parse(splitted[3]) + vertices_counts[i - 1], " "))
+        write(obj_file, string(parse(splitted[4]) + vertices_counts[i - 1]))
+      else
+        write(obj_file, string(splitted[2], " "))
+        write(obj_file, string(splitted[3], " "))
+        write(obj_file, splitted[4])
+      end
+      write(obj_file, "\n")
+    end
+    close(f)
+  end
+  close(obj_file)
+
+  # Removing all tmp files
+  for vtx_file in vertices_files
+    rm(string(modelDirectory, "/", vtx_file))
+  end
+
+  for fcs_file in faces_files
+    rm(string(modelDirectory, "/", fcs_file))
+  end
+
+end @}
+
+As we can see, we take all files contained into the model folder (distinguishing between files containing vertices from those containing faces) and write all their lines into the final model file. However this is simply for vertices files, while it is a bit complicated for faces, because it is necessary to change their indexes according to the current vertices positions into the file. So we need to memorize the offset for every file counting the number of vertices added at every time we open a new file containing vertices. Moreover we can see that we convert vertices coordinates into integer values; this is useful because some softwares do not read float vertices coordinates, so we first make the model ten times bigger (so we still have the first decimal number) and then round it.
+
+The creation of this final model is quite slow, so we can try to speedup the entire software parallelizing it. In the next part we will see how this can be done.
+
+\subsubsection{Parallel merging of obj files}\label{sec:mergeObjParallel}
+
+Now we will see how to parallelize the final file merging. However this is useful only for certain conditions; in fact in traditional filesystems the disk can be accessed from only one process at the same time, so parallelizing this task is totally useless. However for parallel filesystems it is a different matter because we can have parallel writes on storage.
+
+The first simple algorithm we can think for parallel file merging, takes two files for every process and merge them creating a unique file. Then, this process can be repeated until we have only one final file. In Figure~\ref{fig:firstParallelAlgorithm} there is a simple schema for this algorithm.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/FirstParallelAlgorithm.png}
+   \caption{The first parallel algorithm for file merge. Black circles represent the original files, while circles with the cross, represent merged files}
+   \label{fig:firstParallelAlgorithm}
+\end{figure}
+
+How we can see in that figure, if we have a process for every merge operation and sixteen files, we will have eight processes for the firsts merges, four processes for the seconds merges, two processes for the third step and one process for the final merge. Speaking in a general way, told $n$ the number of files we want to merge, we will use $\lfloor n/2 \rfloor$ processes for every step. Probably if we would not have a balanced tree we could use the number of processes in a more efficient way for all our steps. In Figure~\ref{fig:ParallelAlgorithm} there is a non-balanced tree where the number of processes for every merge step is maximized.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/ParallelAlgorithm.png}
+   \caption{A better algorithm for file merge}
+   \label{fig:ParallelAlgorithm}
+\end{figure}
+
 %===============================================================================
 \section{Exporting the library}
 %===============================================================================
@@ -2598,113 +2754,13 @@ end
 @O src/Model2Obj.jl
 @{module Model2Obj
 
-import LARUtils
-
 using Logging
 
 export writeToObj, mergeObj, mergeObjParallel
 
-function writeToObj(V, FV, outputFilename)
-  """
-  Take a LAR model and write it on obj file
+@< write obj files @>
 
-  V: array containing vertices coordinates
-  FV: array containing faces
-  outputFilename: prefix for the output files
-  """
-
-  if (length(V) != 0)
-    outputVtx = string(outputFilename, "_vtx.stl")
-    outputFaces = string(outputFilename, "_faces.stl")
-
-    fileVertex = open(outputVtx, "w")
-    fileFaces = open(outputFaces, "w")
-
-    for v in V
-      write(fileVertex, "v ")
-      write(fileVertex, string(v[1], " "))
-      write(fileVertex, string(v[2], " "))
-      write(fileVertex, string(v[3], "\n"))
-    end
-
-    for f in FV
-
-      write(fileFaces, "f ")
-      write(fileFaces, string(f[1], " "))
-      write(fileFaces, string(f[2], " "))
-      write(fileFaces, string(f[3], "\n"))
-    end
-
-    close(fileVertex)
-    close(fileFaces)
-
-  end
-
-end
-
-function mergeObj(modelDirectory)
-  """
-  Merge stl files in a single obj file
-
-  modelDirectory: directory containing models
-  """
-
-  files = readdir(modelDirectory)
-  vertices_files = files[find(s -> contains(s, string("_vtx.stl")), files)]
-  faces_files = files[find(s -> contains(s, string("_faces.stl")), files)]
-  obj_file = open(string(modelDirectory, "/", "model.obj"), "w") # Output file
-
-  vertices_counts = Array(Int64, length(vertices_files))
-  number_of_vertices = 0
-  for i in 1:length(vertices_files)
-    vtx_file = vertices_files[i]
-    f = open(string(modelDirectory, "/", vtx_file))
-
-    # Writing vertices on the obj file
-    for ln in eachline(f)
-      splitted = split(ln)
-      write(obj_file, "v ")
-      write(obj_file, string(convert(Int,round(parse(splitted[2]) * 10)), " "))
-      write(obj_file, string(convert(Int,round(parse(splitted[3]) * 10)), " "))
-      write(obj_file, string(convert(Int,round(parse(splitted[4]) * 10)), "\n"))
-      number_of_vertices += 1
-    end
-    # Saving number of vertices
-    vertices_counts[i] = number_of_vertices
-    close(f)
-  end
-
-  for i in 1 : length(faces_files)
-    faces_file = faces_files[i]
-    f = open(string(modelDirectory, "/", faces_file))
-    for ln in eachline(f)
-      splitted = split(ln)
-      write(obj_file, "f ")
-      if i > 1
-        write(obj_file, string(parse(splitted[2]) + vertices_counts[i - 1], " "))
-        write(obj_file, string(parse(splitted[3]) + vertices_counts[i - 1], " "))
-        write(obj_file, string(parse(splitted[4]) + vertices_counts[i - 1]))
-      else
-        write(obj_file, string(splitted[2], " "))
-        write(obj_file, string(splitted[3], " "))
-        write(obj_file, splitted[4])
-      end
-      write(obj_file, "\n")
-    end
-    close(f)
-  end
-  close(obj_file)
-
-  # Removing all tmp files
-  for vtx_file in vertices_files
-    rm(string(modelDirectory, "/", vtx_file))
-  end
-
-  for fcs_file in faces_files
-    rm(string(modelDirectory, "/", fcs_file))
-  end
-
-end
+@< serial file merge @>
 
 function assignTasks(startInd, endInd, taskArray)
   """

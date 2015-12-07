@@ -1,7 +1,5 @@
 module Model2Obj
 
-import LARUtils
-
 using Logging
 
 export writeToObj, mergeObj, mergeObjParallel
@@ -42,7 +40,7 @@ function writeToObj(V, FV, outputFilename)
 
   end
 
-end
+end 
 
 function mergeObj(modelDirectory)
   """
@@ -106,7 +104,7 @@ function mergeObj(modelDirectory)
     rm(string(modelDirectory, "/", fcs_file))
   end
 
-end
+end 
 
 function assignTasks(startInd, endInd, taskArray)
   """

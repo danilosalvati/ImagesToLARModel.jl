@@ -424,7 +424,8 @@ function smoothBlocksProcess(modelDirectory,
       if isfile(blockFileV)
         # Loading only model of the current block
         blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
-        blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV, blockModelFV, 0)
+        blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV,
+                                                blockModelFV, 0)
 
         # Loading a unique model from this block and its adjacents
         modelsFiles = Array(String, 0)
