@@ -7,11 +7,9 @@ using Clustering
 using Logging
 @pyimport scipy.ndimage as ndimage
 
-NOISE_SHAPE_DETECT=10
-
 export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
 
-function convertImages(inputPath, outputPath, bestImage)
+function convertImages(inputPath, outputPath, bestImage, noise_shape_detect = 0)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
@@ -22,6 +20,7 @@ function convertImages(inputPath, outputPath, bestImage)
   inputPath: Directory containing input images
   outputPath: Temporary directory containing png images
   bestImage: Image chosen for centroids computation
+  noise_shape_detect: Shape for the denoising filter
 
   Returns the new name for the best image
   """
@@ -67,10 +66,12 @@ function convertImages(inputPath, outputPath, bestImage)
     end
     imageNumber += 1 
     # Denoising
-    imArray = raw(img)
-    imArray = ndimage.median_filter(imArray, NOISE_SHAPE_DETECT) 
+    if noise_shape_detect != 0
+      imArray = raw(img)
+      imArray = ndimage.median_filter(imArray, noise_shape_detect)
+      img = grayim(imArray)
+    end 
     
-    img = grayim(imArray)
     imwrite(img, outputFilename)
 
   end

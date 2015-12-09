@@ -13,7 +13,8 @@ export images2LARModel
 
 
 function images2LARModel(nx, ny, nz, bestImage,
-                        inputDirectory, outputDirectory, parallelMerge)
+                        inputDirectory, outputDirectory,
+                        parallelMerge, noise_shape_detect = 0)
   """
   Convert a stack of images into a 3d model
   """
@@ -32,7 +33,7 @@ function images2LARModel(nx, ny, nz, bestImage,
   tempDirectory = string(outputDirectory,"TEMP/")
 
   newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory,
-                                                        bestImage)
+                                                     bestImage, noise_shape_detect)
 
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
                                       string(tempDirectory,newBestImage))

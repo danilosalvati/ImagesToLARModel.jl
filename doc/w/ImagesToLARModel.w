@@ -200,6 +200,7 @@ Images conversion takes several parameters:
  \item nx, ny, nz: Sizes of the grid chosen for image segmentation (see section~\ref{sec:PngStack2Array3dJulia})
  \item DEBUG\_LEVEL: Debug level for Julia logger
  \item parallelMerge (experimental): Choose between sequential or parallel merge of files (see section~\ref{sec:Model2Obj})
+ \item noise\_shape: Intensity of the denoising filter for images (0 if you want to disable it)
 \end{itemize}
 
 Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
@@ -225,12 +226,19 @@ Because of their number it has been realized a function for simply loading them 
     end
   catch
   end
+  
+  noise_shape = 0
+  try
+    noise_shape = configuration["noise_shape"]
+  catch
+  end
+  
 
   return configuration["inputDirectory"], configuration["outputDirectory"],
 	configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
         DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
-        parallelMerge
+        parallelMerge, noise_shape
 
 end
 @}
@@ -238,14 +246,16 @@ end
 A valid JSON file has the following structure:
 \begin{tabbing}
 \{ \= \\
-\>  ``inputDirectory": "Path of the input directory",\\
-\>  ``outputDirectory": "Path of the output directory",\\
-\>  ``bestImage": "Name of the best image (with extension) ",\\
+\>  ``inputDirectory": ``Path of the input directory",\\
+\>  ``outputDirectory": ``Path of the output directory",\\
+\>  ``bestImage": ``Name of the best image (with extension) ",\\
 \>  ``nx": x grid size,\\
 \>  ``ny": y grid size,\\
 \>  ``nz": border z,\\
 \>  ``DEBUG\_LEVEL": julia Logging level (can be a number from 1 to 5)\\
-\>  ``parallelMerge": "true" or "false" \\
+\>  ``parallelMerge": ``true" or ``false" \\
+\>  ``noise\_shape": A number which indicates the intensity of the denoising \\
+filter (0 if you want to disable denoising)\\
 \}\\
 \end{tabbing}
 
@@ -253,9 +263,9 @@ For example, we can write:
 
 \begin{tabbing}
 \{ \= \\
-\>  ``inputDirectory": ''/home/juser/IMAGES/``\\
-\>  ``outputDirectory": ''/home/juser/OUTPUT/``,\\
-\>  ``bestImage": ''0009.tiff``,\\
+\>  ``inputDirectory": ``/home/juser/IMAGES/"\\
+\>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
+\>  ``bestImage": ``0009.tiff",\\
 \>  ``nx": 2,\\
 \>  ``ny": 2,\\
 \>  ``nz": 2,\\
@@ -273,6 +283,8 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
  \item CRITICAL
 \end{itemize}
 
+\textit{parallelMerge} and \textit{noise\_shape} are optional parameters
+
 \subsection{Starting conversion}\label{sec:input}
 
 As we have already said, this module has the only responsibility to collect data input and starts other modules. These are the functions that start the process and the only exposed to the application users:
@@ -286,15 +298,16 @@ As we have already said, this module has the only responsibility to collect data
   configurationFile: Path of the configuration file
   """
   inputDirectory, outputDirectory, bestImage, nx, ny, nz,
-      DEBUG_LEVEL, parallelMerge = loadConfiguration(open(configurationFile))
+      DEBUG_LEVEL, parallelMerge, noise_shape = loadConfiguration(open(configurationFile))
   convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
-			nx, ny, nz, DEBUG_LEVEL, parallelMerge)
+			nx, ny, nz, DEBUG_LEVEL, parallelMerge, noise_shape)
 end
 @}
 
 @D Start manual conversion
 @{function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
-                                 nx, ny, nz, DEBUG_LEVEL = INFO, parallelMerge = false)
+                                 nx, ny, nz, DEBUG_LEVEL = INFO,
+                                 parallelMerge = false, noise_shape = 0)
   """
   Start conversion of a stack of images into a 3D model
 
@@ -308,6 +321,9 @@ end
     - WARNING
     - ERROR
     - CRITICAL
+  parallelMerge: Choose if you want to use the algorithm
+  for parallel merging (experimental)
+  noise_shape: The shape for image denoising
   """
   # Create output directory
   try
@@ -317,7 +333,7 @@ end
 
   Logging.configure(level=DEBUG_LEVEL)
   ImagesConversion.images2LARModel(nx, ny, nz, bestImage,
-	  inputDirectory, outputDirectory, parallelMerge)
+	  inputDirectory, outputDirectory, parallelMerge, noise_shape)
 end
 @}
 
@@ -339,12 +355,10 @@ using Clustering
 using Logging
 @@pyimport scipy.ndimage as ndimage
 
-NOISE_SHAPE_DETECT=10
-
 export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
 @}
 
-We need \texttt{Images} and \texttt{Colors} packages for manipulating png images and \texttt{PyCall} for using Python functions for clustering and filtering images.
+We need \texttt{Images}, \texttt{Clustering} and \texttt{Colors} packages for manipulating png images and \texttt{PyCall} for using Python functions for noise removal from images.
 As a consequence, we need a python environment with \texttt{scipy} to be able to run the package
 
 \subsection{Convert input to png}\label{sec:convertPNG}
@@ -439,15 +453,18 @@ Fianlly we have to reduce noise on the image. The better choice is using a \text
 
 @D Reduce noise
 @{# Denoising
-imArray = raw(img)
-imArray = ndimage.median_filter(imArray, NOISE_SHAPE_DETECT) @}
+if noise_shape_detect != 0
+  imArray = raw(img)
+  imArray = ndimage.median_filter(imArray, noise_shape_detect)
+  img = grayim(imArray)
+end @}
 
 Where imArray is an array containing all raw data from images
 
 Finally this is the code for the entire function:
 
 @D Convert to png
-@{function convertImages(inputPath, outputPath, bestImage)
+@{function convertImages(inputPath, outputPath, bestImage, noise_shape_detect = 0)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
@@ -458,6 +475,7 @@ Finally this is the code for the entire function:
   inputPath: Directory containing input images
   outputPath: Temporary directory containing png images
   bestImage: Image chosen for centroids computation
+  noise_shape_detect: Shape for the denoising filter
 
   Returns the new name for the best image
   """
@@ -477,7 +495,6 @@ Finally this is the code for the entire function:
     @< Search for best image @>
     @< Reduce noise @>
     
-    img = grayim(imArray)
     imwrite(img, outputFilename)
 
   end
@@ -760,7 +777,8 @@ Finally we can start conversion with all these parameters calling \texttt{startI
 
 @D main function for ImagesConversion
 @{function images2LARModel(nx, ny, nz, bestImage,
-			inputDirectory, outputDirectory, parallelMerge)
+			inputDirectory, outputDirectory,
+			parallelMerge, noise_shape_detect = 0)
   """
   Convert a stack of images into a 3d model
   """
@@ -779,7 +797,7 @@ Finally we can start conversion with all these parameters calling \texttt{startI
   tempDirectory = string(outputDirectory,"TEMP/")
 
   newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory,
-							bestImage)
+						     bestImage, noise_shape_detect)
 
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
 				      string(tempDirectory,newBestImage))

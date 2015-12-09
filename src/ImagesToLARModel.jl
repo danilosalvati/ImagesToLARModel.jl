@@ -31,12 +31,19 @@ function loadConfiguration(configurationFile)
     end
   catch
   end
+  
+  noise_shape = 0
+  try
+    noise_shape = configuration["noise_shape"]
+  catch
+  end
+  
 
   return configuration["inputDirectory"], configuration["outputDirectory"],
         configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
         DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
-        parallelMerge
+        parallelMerge, noise_shape
 
 end
 
@@ -48,13 +55,14 @@ function convertImagesToLARModel(configurationFile)
   configurationFile: Path of the configuration file
   """
   inputDirectory, outputDirectory, bestImage, nx, ny, nz,
-      DEBUG_LEVEL, parallelMerge = loadConfiguration(open(configurationFile))
+      DEBUG_LEVEL, parallelMerge, noise_shape = loadConfiguration(open(configurationFile))
   convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
-                        nx, ny, nz, DEBUG_LEVEL, parallelMerge)
+                        nx, ny, nz, DEBUG_LEVEL, parallelMerge, noise_shape)
 end
 
 function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
-                                 nx, ny, nz, DEBUG_LEVEL = INFO, parallelMerge = false)
+                                 nx, ny, nz, DEBUG_LEVEL = INFO,
+                                 parallelMerge = false, noise_shape = 0)
   """
   Start conversion of a stack of images into a 3D model
 
@@ -68,6 +76,9 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
     - WARNING
     - ERROR
     - CRITICAL
+  parallelMerge: Choose if you want to use the algorithm
+  for parallel merging (experimental)
+  noise_shape: The shape for image denoising
   """
   # Create output directory
   try
@@ -77,7 +88,7 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
 
   Logging.configure(level=DEBUG_LEVEL)
   ImagesConversion.images2LARModel(nx, ny, nz, bestImage,
-          inputDirectory, outputDirectory, parallelMerge)
+          inputDirectory, outputDirectory, parallelMerge, noise_shape)
 end
 
 end

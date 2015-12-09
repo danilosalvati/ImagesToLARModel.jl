@@ -339,12 +339,10 @@ using Clustering
 using Logging
 @@pyimport scipy.ndimage as ndimage
 
-NOISE_SHAPE_DETECT=10
-
 export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
 @}
 
-We need \texttt{Images} and \texttt{Colors} packages for manipulating png images and \texttt{PyCall} for using Python functions for clustering and filtering images.
+We need \texttt{Images}, \texttt{Clustering} and \texttt{Colors} packages for manipulating png images and \texttt{PyCall} for using Python functions for noise removal from images.
 As a consequence, we need a python environment with \texttt{scipy} to be able to run the package
 
 \subsection{Convert input to png}\label{sec:convertPNG}
@@ -439,15 +437,18 @@ Fianlly we have to reduce noise on the image. The better choice is using a \text
 
 @D Reduce noise
 @{# Denoising
-imArray = raw(img)
-imArray = ndimage.median_filter(imArray, NOISE_SHAPE_DETECT) @}
+if noise_shape_detect != 0
+  imArray = raw(img)
+  imArray = ndimage.median_filter(imArray, noise_shape_detect)
+  img = grayim(imArray)
+end @}
 
 Where imArray is an array containing all raw data from images
 
 Finally this is the code for the entire function:
 
 @D Convert to png
-@{function convertImages(inputPath, outputPath, bestImage)
+@{function convertImages(inputPath, outputPath, bestImage, noise_shape_detect = 0)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
@@ -458,6 +459,7 @@ Finally this is the code for the entire function:
   inputPath: Directory containing input images
   outputPath: Temporary directory containing png images
   bestImage: Image chosen for centroids computation
+  noise_shape_detect: Shape for the denoising filter
 
   Returns the new name for the best image
   """
@@ -477,7 +479,6 @@ Finally this is the code for the entire function:
     @< Search for best image @>
     @< Reduce noise @>
     
-    img = grayim(imArray)
     imwrite(img, outputFilename)
 
   end
@@ -779,7 +780,7 @@ Finally we can start conversion with all these parameters calling \texttt{startI
   tempDirectory = string(outputDirectory,"TEMP/")
 
   newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory,
-							bestImage)
+						     bestImage)
 
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
 				      string(tempDirectory,newBestImage))
@@ -2641,7 +2642,14 @@ The first simple algorithm we can think for parallel file merging, takes two fil
    \label{fig:firstParallelAlgorithm}
 \end{figure}
 
-How we can see in that figure, if we have a process for every merge operation and sixteen files, we will have eight processes for the firsts merges, four processes for the seconds merges, two processes for the third step and one process for the final merge. Speaking in a general way, told $n$ the number of files we want to merge, we will use $\lfloor n/2 \rfloor$ processes
+How we can see in that figure, if we have a process for every merge operation and sixteen files, we will have eight processes for the firsts merges, four processes for the seconds merges, two processes for the third step and one process for the final merge. Speaking in a general way, told $n$ the number of files we want to merge, we will use $\lfloor n/2 \rfloor$ processes for every step. Probably if we would not have a balanced tree we could use the number of processes in a more efficient way for all our steps. In Figure~\ref{fig:ParallelAlgorithm} there is a non-balanced tree where the number of processes for every merge step is maximized.
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.40\linewidth]{images/ParallelAlgorithm.png}
+   \caption{A better algorithm for file merge}
+   \label{fig:ParallelAlgorithm}
+\end{figure}
 
 %===============================================================================
 \section{Exporting the library}
