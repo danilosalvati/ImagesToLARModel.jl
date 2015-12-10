@@ -397,23 +397,9 @@ As we can see, we first need to convert image to RGB and then reconverting to gr
 
 
 @D Image resizing
-@{# resizing images if they do not have even dimensions
-dim = size(img)
-if(dim[1] % 2 != 0)
-  debug("Image has odd x; resizing")
-  xrange = 1: dim[1] - 1
-else
-  xrange = 1: dim[1]
-end
-
-if(dim[2] % 2 != 0)
-  debug("Image has odd y; resizing")
-  yrange = 1: dim[2] - 1
-else
-  yrange = 1: dim[2]
-end
-
-img = subim(gray_img, xrange, yrange) @}
+@{if(crop!= Void)
+  resizeImage(gray_img, crop)
+end @}
     
 
 Next we just have to search for the best image and add one image if they are odd (for same reasons we need even image dimensions)
@@ -463,7 +449,8 @@ Where imArray is an array containing all raw data from images
 Finally this is the code for the entire function:
 
 @D Convert to png
-@{function convertImages(inputPath, outputPath, bestImage, noise_shape_detect = 0)
+@{function convertImages(inputPath, outputPath, bestImage,
+                       crop = Void, noise_shape_detect = 0)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
@@ -474,26 +461,23 @@ Finally this is the code for the entire function:
   inputPath: Directory containing input images
   outputPath: Temporary directory containing png images
   bestImage: Image chosen for centroids computation
+  crop: Parameter for resizing of images (they can be
+        extended or cropped)
   noise_shape_detect: Shape for the denoising filter
-
-  Returns the new name for the best image
   """
 
-  @< Define string prefix @>
+  imageFiles = readdir(inputPath)
   
-  newBestImage = ""
-  imageNumber = 0
   for imageFile in imageFiles
     img = imread(string(inputPath, imageFile))
     @< Greyscale conversion @>
     @< Image resizing @>
-    outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end],
-			      imageNumber,".png")
-    imwrite(img, outputFilename)
 
     @< Search for best image @>
     @< Reduce noise @>
     
+    outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]]
+                            ,"png")
     imwrite(img, outputFilename)
 
   end
@@ -503,6 +487,42 @@ Finally this is the code for the entire function:
   return newBestImage
 end
 @}
+
+\subsubsection{Image resizing}\label{sec:imageResize}
+
+@D image resizing
+@{function resizeImage(image, crop)
+  """
+  Utility function for images resize
+  
+  image: the input image
+  crop: a list containing the crop parameters 
+        for the three dimensions 
+  
+  returns the resized image
+  """
+  dim = size(image)
+  if(crop[1][2] > dim[1])
+    # Extending the images on the x axis
+    imArray = raw(image)
+    zeroArray = zeros(UInt8, dim[2])
+    for i in (1 : (crop[1][2] - dim[1]))
+      imArray = vcat(imArray, transpose(zeroArray))
+    end
+    image = grayim(imArray)
+  end
+  
+  if(crop[2][2] > dim[2])
+    # Extending the images on the y axis
+    imArray = raw(image)
+    zeroArray = zeros(UInt8, size(image)[1])
+    for i in (1: (crop[2][2] - dim[2]))
+      imArray = hcat(imArray, zeroArray)
+    end
+    image = grayim(imArray)
+  end
+  return subim(image, crop[1][1]:crop[1][2], crop[2][1]:crop[2][2])
+end @}
 
 \subsection{Getting data from a png}\label{sec:getData}
 
@@ -2887,6 +2907,46 @@ end @}
 
 \subsection{Load models from files}\label{sec:loadObj}
 
+Another important functionality for our library, consists in model loading from our faces and vertices files. This is useful when passing from a pipeline step to another one. For simplicity, we offer a unique function that loads an array of vertices files (with the corresponding array of faces files), merge the values into a unique model and returns it.
+
+@D Load models from file
+@{function getModelsFromFiles(arrayV, arrayFV)
+  """
+  Get a LAR models for two arrays of vertices
+  and faces files
+
+  arrayV: Array containing all vertices files
+  arrayFV: Array containing all faces files
+  """
+
+  V = Array(Array{Float64}, 0)
+  FV = Array(Array{Int}, 0)
+  offset = 0
+
+  for i in 1:length(arrayV)
+    if isfile(arrayFV[i])
+      f_FV = open(arrayFV[i])
+
+      for ln in eachline(f_FV)
+        splitted = split(ln)
+        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) +
+	     offset, parse(splitted[4]) + offset])
+      end
+      close(f_FV)
+
+      f_V = open(arrayV[i])
+      for ln in eachline(f_V)
+        splitted = split(ln)
+        push!(V, [parse(splitted[2]), parse(splitted[3]),
+             parse(splitted[4])])
+        offset += 1
+      end
+      close(f_V)
+    end
+  end
+  return V, FV
+end @}
+
 %===============================================================================
 \section{Exporting the library}
 %===============================================================================
@@ -3011,40 +3071,7 @@ export writeToObj, mergeObj, mergeObjParallel
 
 @< merge obj parallel @>
 
-function getModelsFromFiles(arrayV, arrayFV)
-  """
-  Get a LAR models for two arrays of vertices
-  and faces files
-
-  arrayV: Array containing all vertices files
-  arrayFV: Array containing all faces files
-  """
-
-  V = Array(Array{Float64}, 0)
-  FV = Array(Array{Int}, 0)
-  offset = 0
-
-  for i in 1:length(arrayV)
-    if isfile(arrayFV[i])
-      f_FV = open(arrayFV[i])
-
-      for ln in eachline(f_FV)
-        splitted = split(ln)
-        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
-      end
-      close(f_FV)
-
-      f_V = open(arrayV[i])
-      for ln in eachline(f_V)
-        splitted = split(ln)
-        push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
-        offset += 1
-      end
-      close(f_V)
-    end
-  end
-  return V, FV
-end
+@< Load models from file @>
 end
 @}
 

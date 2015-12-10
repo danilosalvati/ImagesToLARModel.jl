@@ -9,62 +9,65 @@ using Logging
 
 export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
 
-function convertImages(inputPath, outputPath, bestImage, noise_shape_detect = 0)
+function resizeImage(image, crop)
+  """
+  Utility function for images resize
+  
+  image: the input image
+  crop: a list containing the crop parameters 
+        for the three dimensions 
+  
+  returns the resized image
+  """
+  dim = size(image)
+  if(crop[1][2] > dim[1])
+    # Extending the images on the x axis
+    imArray = raw(image)
+    zeroArray = zeros(UInt8, dim[2])
+    for i in (1 : (crop[1][2] - dim[1]))
+      imArray = vcat(imArray, transpose(zeroArray))
+    end
+    image = grayim(imArray)
+  end
+  
+  if(crop[2][2] > dim[2])
+    # Extending the images on the y axis
+    imArray = raw(image)
+    zeroArray = zeros(UInt8, size(image)[1])
+    for i in (1: (crop[2][2] - dim[2]))
+      imArray = hcat(imArray, zeroArray)
+    end
+    image = grayim(imArray)
+  end
+  return subim(image, crop[1][1]:crop[1][2], crop[2][1]:crop[2][2])
+end 
+
+function convertImages(inputPath, outputPath,
+                       crop = Void, noise_shape_detect = 0)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
-  If images have one of two odd dimensions, they will be resized
+  Images will be resized according with the crop parameter
   and if folder contains an odd number of images another one will be
   added
 
   inputPath: Directory containing input images
   outputPath: Temporary directory containing png images
-  bestImage: Image chosen for centroids computation
+  crop: Parameter for images resizing (they can be
+        extended or cropped)
   noise_shape_detect: Shape for the denoising filter
-
-  Returns the new name for the best image
   """
 
   imageFiles = readdir(inputPath)
-  numberOfImages = length(imageFiles)
-  outputPrefix = ""
-  for i in 1: length(string(numberOfImages)) - 1
-    outputPrefix = string(outputPrefix,"0")
-  end 
   
-  newBestImage = ""
-  imageNumber = 0
   for imageFile in imageFiles
     img = imread(string(inputPath, imageFile))
     rgb_img = convert(Image{ColorTypes.RGB}, img)
     gray_img = convert(Image{ColorTypes.Gray}, rgb_img) 
-    # resizing images if they do not have even dimensions
-    dim = size(img)
-    if(dim[1] % 2 != 0)
-      debug("Image has odd x; resizing")
-      xrange = 1: dim[1] - 1
-    else
-      xrange = 1: dim[1]
-    end
+    if(crop!= Void)
+      resizeImage(gray_img, crop)
+    end 
 
-    if(dim[2] % 2 != 0)
-      debug("Image has odd y; resizing")
-      yrange = 1: dim[2] - 1
-    else
-      yrange = 1: dim[2]
-    end
-
-    img = subim(gray_img, xrange, yrange) 
-    outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end],
-                              imageNumber,".png")
-    imwrite(img, outputFilename)
-
-    # Searching the best image
-    if(imageFile == bestImage)
-      newBestImage = string(outputPrefix[length(string(imageNumber)):end],
-                                imageNumber,".png")
-    end
-    imageNumber += 1 
     # Denoising
     if noise_shape_detect != 0
       imArray = raw(img)
@@ -72,7 +75,8 @@ function convertImages(inputPath, outputPath, bestImage, noise_shape_detect = 0)
       img = grayim(imArray)
     end 
     
-    imwrite(img, outputFilename)
+   outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")
+   imwrite(img, outputFilename)
 
   end
 
@@ -95,8 +99,6 @@ function convertImages(inputPath, outputPath, bestImage, noise_shape_detect = 0)
                         outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
     imwrite(img, outputFilename)
   end 
-
-  return newBestImage
 end
 
 function getImageData(imageFile)

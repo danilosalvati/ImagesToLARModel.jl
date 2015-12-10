@@ -368,25 +368,13 @@ Conversion needs the following parameters:
 \begin{itemize}
  \item inputPath: path of the folder containing the original images
  \item outputPath: path where we will save png images
- \item bestImage: name of the image chosen for centroids computing (see section~\ref{sec:centroids})
+ \item crop: parameters for images resizing (they can be extended or cropped)
 \end{itemize}
 
-After conversion \textit{outputPath} will contain our png images and the function will return the new name chosen for the best image.\\
-
-Now we can examine single parts of conversion process. First of all we need to specify a new name for images, keeping the right order between them; so we need to define a prefix based on number of images:
-
-@D Define string prefix
-@{imageFiles = readdir(inputPath)
-numberOfImages = length(imageFiles)
-outputPrefix = ""
-for i in 1: length(string(numberOfImages)) - 1
-  outputPrefix = string(outputPrefix,"0")
-end @}
-    
-Next we need to open the single image doing the following operations:
+Now we can examine single parts of conversion process. First of all we need to open the single image doing the following operations:
 \begin{enumerate}
  \item Open images using \texttt{Images} library (which relies on \texttt{ImageMagick}) and save them in greyscale png format 
- \item if one or both dimensions of the image are odd we need to remove one row (or column) of pixels to make it even. This will be more clear when we will introduce the grid for parallel computation (see section~\ref{sec:ImagesConversion})
+ \item resize the images according to the \textit{crop} parameter
 \end{enumerate}
 
 @D Greyscale conversion
@@ -397,34 +385,12 @@ As we can see, we first need to convert image to RGB and then reconverting to gr
 
 
 @D Image resizing
-@{# resizing images if they do not have even dimensions
-dim = size(img)
-if(dim[1] % 2 != 0)
-  debug("Image has odd x; resizing")
-  xrange = 1: dim[1] - 1
-else
-  xrange = 1: dim[1]
-end
-
-if(dim[2] % 2 != 0)
-  debug("Image has odd y; resizing")
-  yrange = 1: dim[2] - 1
-else
-  yrange = 1: dim[2]
-end
-
-img = subim(gray_img, xrange, yrange) @}
+@{if(crop!= Void)
+  resizeImage(gray_img, crop)
+end @}
     
-
-Next we just have to search for the best image and add one image if they are odd (for same reasons we need even image dimensions)
-
-@D Search for best image
-@{# Searching the best image
-if(imageFile == bestImage)
-  newBestImage = string(outputPrefix[length(string(imageNumber)):end],
-			    imageNumber,".png")
-end
-imageNumber += 1 @}
+The code for image resizing will be better explained in section~\ref{sec:imageResize}.
+Next we just have to add one image if they are odd (for same reasons we need even image dimensions)
     
 @D Add one image
 @{# Adding another image if they are odd
@@ -448,7 +414,7 @@ if(numberOfImages % 2 != 0)
 end @}
 
 
-Fianlly we have to reduce noise on the image. The better choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
+Finally we have to reduce noise on the image. The best choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
 
 @D Reduce noise
 @{# Denoising
@@ -463,46 +429,75 @@ Where imArray is an array containing all raw data from images
 Finally this is the code for the entire function:
 
 @D Convert to png
-@{function convertImages(inputPath, outputPath, bestImage, noise_shape_detect = 0)
+@{function convertImages(inputPath, outputPath,
+                       crop = Void, noise_shape_detect = 0)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
-  If images have one of two odd dimensions, they will be resized
+  Images will be resized according with the crop parameter
   and if folder contains an odd number of images another one will be
   added
 
   inputPath: Directory containing input images
   outputPath: Temporary directory containing png images
-  bestImage: Image chosen for centroids computation
+  crop: Parameter for images resizing (they can be
+        extended or cropped)
   noise_shape_detect: Shape for the denoising filter
-
-  Returns the new name for the best image
   """
 
-  @< Define string prefix @>
+  imageFiles = readdir(inputPath)
   
-  newBestImage = ""
-  imageNumber = 0
   for imageFile in imageFiles
     img = imread(string(inputPath, imageFile))
     @< Greyscale conversion @>
     @< Image resizing @>
-    outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end],
-			      imageNumber,".png")
-    imwrite(img, outputFilename)
 
-    @< Search for best image @>
     @< Reduce noise @>
     
-    imwrite(img, outputFilename)
+   outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")
+   imwrite(img, outputFilename)
 
   end
 
   @< Add one image @>
-
-  return newBestImage
 end
 @}
+
+\subsubsection{Image resizing}\label{sec:imageResize}
+
+@D image resizing
+@{function resizeImage(image, crop)
+  """
+  Utility function for images resize
+  
+  image: the input image
+  crop: a list containing the crop parameters 
+        for the three dimensions 
+  
+  returns the resized image
+  """
+  dim = size(image)
+  if(crop[1][2] > dim[1])
+    # Extending the images on the x axis
+    imArray = raw(image)
+    zeroArray = zeros(UInt8, dim[2])
+    for i in (1 : (crop[1][2] - dim[1]))
+      imArray = vcat(imArray, transpose(zeroArray))
+    end
+    image = grayim(imArray)
+  end
+  
+  if(crop[2][2] > dim[2])
+    # Extending the images on the y axis
+    imArray = raw(image)
+    zeroArray = zeros(UInt8, size(image)[1])
+    for i in (1: (crop[2][2] - dim[2]))
+      imArray = hcat(imArray, zeroArray)
+    end
+    image = grayim(imArray)
+  end
+  return subim(image, crop[1][1]:crop[1][2], crop[2][1]:crop[2][2])
+end @}
 
 \subsection{Getting data from a png}\label{sec:getData}
 
@@ -3061,6 +3056,8 @@ end
 @{module PngStack2Array3dJulia
 
 @< modules import PngStack2Array3dJulia @>
+@<image resizing @>
+
 @< Convert to png @>
 @< Get image data @>
 @< Centroid computation @>
