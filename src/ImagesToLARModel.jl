@@ -38,7 +38,6 @@ function loadConfiguration(configurationFile)
   catch
   end
   
-
   return configuration["inputDirectory"], configuration["outputDirectory"],
         configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],

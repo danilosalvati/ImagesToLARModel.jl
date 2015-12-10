@@ -4,6 +4,8 @@
 
 - Make images conversion optional 
 - Add interfaces for other file types
+- With separation of images conversion, it could be useful to add function for resizing and extending images
+- Investigate on best values for boundary operator size
 
 ## PngStack2Array3dJulia
 
@@ -22,7 +24,6 @@
 - I need a check for non-existing best images
 - Every process takes a copy of the sparse  boundary matrix, try to use a shared array or something similar to reduce network communications
 - Use a parameter for controlling number of smoothing iterations
-- Use a parameter for image filtering
 - Study Requires.jl and see if we can use a lazy load for python libraries
 
 ## Lar2Julia
@@ -46,4 +47,4 @@
 
 ## Documentation
 
-- Add documentation for Model2Obj
+- Finish documentation for introduction

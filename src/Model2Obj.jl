@@ -127,7 +127,7 @@ function assignTasks(startInd, endInd, taskArray)
     assignTasks(startInd, startInd + trunc((endInd - startInd) / 2), taskArray)
     assignTasks(startInd + trunc((endInd - startInd) / 2) + 1, endInd, taskArray)
   end
-end
+end 
 
 function mergeVerticesFiles(file1, file2, startOffset)
   """
@@ -153,8 +153,7 @@ function mergeVerticesFiles(file1, file2, startOffset)
   close(f1)
 
   return number_of_vertices
-end
-
+end 
 
 function mergeFacesFiles(file1, file2, facesOffset)
   """
@@ -178,7 +177,7 @@ function mergeFacesFiles(file1, file2, facesOffset)
   close(f2)
 
   close(f1)
-end
+end 
 
 function mergeObjProcesses(fileArray, facesOffset = Nothing)
   """
@@ -187,6 +186,9 @@ function mergeObjProcesses(fileArray, facesOffset = Nothing)
   fileArray: Array containing files that will be merged
   facesOffset (optional): if merging faces files, this array contains
     offsets for every file
+    
+  if it is merging vertices files it returns the offset 
+  for the corresponding faces
   """
 
   if(contains(fileArray[1], string("_vtx.stl")))
@@ -211,12 +213,12 @@ function mergeObjProcesses(fileArray, facesOffset = Nothing)
       rm(fileArray[i]) # Removing merged file
     end
   end
-end
+end 
 
 function mergeObjHelper(vertices_files, faces_files)
   """
   Support function for mergeObj. It takes vertices and faces files
-  and execute a single merging step
+  and executes a single merging step
 
   vertices_files: Array containing vertices files
   faces_files: Array containing faces files
@@ -231,14 +233,11 @@ function mergeObjHelper(vertices_files, faces_files)
   for i in 1 : length(taskArray) - 1
     task = @spawn mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
-    #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)]))
   end
 
   # Merging last vertices files
   task = @spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
   push!(tasks, task)
-  #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end]))
-
 
   for task in tasks
     append!(numberOfVertices, fetch(task))
@@ -253,9 +252,6 @@ function mergeObjHelper(vertices_files, faces_files)
     task = @spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
                                     numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
     push!(tasks, task)
-
-    #mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
-    #                  numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
   end
 
   #Merging last faces files
@@ -263,14 +259,12 @@ function mergeObjHelper(vertices_files, faces_files)
                                   numberOfVertices[taskArray[length(taskArray)] : end])
 
   push!(tasks, task)
-  #mergeObjProcesses(faces_files[taskArray[length(taskArray)] : end],
-  #                    numberOfVertices[taskArray[length(taskArray)] : end])
 
   for task in tasks
     wait(task)
   end
 
-end
+end 
 
 function mergeObjParallel(modelDirectory)
   """
@@ -306,7 +300,7 @@ function mergeObjParallel(modelDirectory)
   mv(files[2], string(modelDirectory, "/model.obj"))
   rm(files[1])
 
-end
+end 
 
 function getModelsFromFiles(arrayV, arrayFV)
   """
@@ -327,19 +321,21 @@ function getModelsFromFiles(arrayV, arrayFV)
 
       for ln in eachline(f_FV)
         splitted = split(ln)
-        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
+        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) +
+             offset, parse(splitted[4]) + offset])
       end
       close(f_FV)
 
       f_V = open(arrayV[i])
       for ln in eachline(f_V)
         splitted = split(ln)
-        push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
+        push!(V, [parse(splitted[2]), parse(splitted[3]),
+             parse(splitted[4])])
         offset += 1
       end
       close(f_V)
     end
   end
   return V, FV
-end
+end 
 end

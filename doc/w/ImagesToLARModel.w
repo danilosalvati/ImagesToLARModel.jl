@@ -233,7 +233,6 @@ Because of their number it has been realized a function for simply loading them 
   catch
   end
   
-
   return configuration["inputDirectory"], configuration["outputDirectory"],
 	configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
@@ -2659,7 +2658,7 @@ The first simple algorithm we can think for parallel file merging, takes two fil
    \label{fig:firstParallelAlgorithm}
 \end{figure}
 
-How we can see in that figure, if we have a process for every merge operation and sixteen files, we will have eight processes for the firsts merges, four processes for the seconds merges, two processes for the third step and one process for the final merge. Speaking in a general way, told $n$ the number of files we want to merge, we will use $\lfloor n/2 \rfloor$ processes for every step. Probably if we would not have a balanced tree we could use the number of processes in a more efficient way for all our steps. In Figure~\ref{fig:ParallelAlgorithm} there is a non-balanced tree where the number of processes for every merge step is maximized.
+How we can see in that figure, if we have a process for every merge operation and sixteen files, we will have eight processes for the first merge, four processes for the second merge steps, two processes for the third step and one process for the final merge. Speaking in a general way, told $n$ the number of files we want to merge, we will use $\lfloor n/2 \rfloor$ processes for every step. Probably if we would not have a balanced tree we could use the number of processes in a more efficient way for all our steps. In Figure~\ref{fig:ParallelAlgorithm} there is a non-balanced tree where the number of processes for every merge step is maximized.
 
 \begin{figure}[htb] %  figure placement: here, top, bottom
    \centering
@@ -2667,6 +2666,266 @@ How we can see in that figure, if we have a process for every merge operation an
    \caption{A better algorithm for file merge}
    \label{fig:ParallelAlgorithm}
 \end{figure}
+
+Now we can examine the code used for obtaining this result. First of all we need a function for assigning files to the right process creating the tree in Figure~\ref{fig:ParallelAlgorithm}:
+
+@D assign tasks
+@{function assignTasks(startInd, endInd, taskArray)
+  """
+  This function choose the first files to merge
+  creating a tree where number of processes is maximized
+
+  startInd: starting index for array subdivision
+  endInd: end index for array subdivision
+  taskArray: array containing indices of files to merge for first
+  """
+  if (endInd - startInd == 2)
+    push!(taskArray, startInd)
+  elseif (endInd - startInd < 2)
+    if (endInd % 4 != 0 && startInd != endInd)
+      # Stop recursion on this branch
+      push!(taskArray, startInd)
+    end
+    # Stop recursion doing nothing
+  else
+    assignTasks(startInd, startInd + trunc((endInd - startInd) / 2), taskArray)
+    assignTasks(startInd + trunc((endInd - startInd) / 2) + 1, endInd, taskArray)
+  end
+end @}
+
+Now we need some functions for merging files; in particular we have to merge vertices files (contemporary counting the offsets for the faces) and faces files. This is the code for the first function:
+
+@D merge vertices file
+@{function mergeVerticesFiles(file1, file2, startOffset)
+  """
+  Support function for merging two vertices files.
+  Returns the number of vertices of the merged file
+
+  file1: path of the first file
+  file2: path of the second file
+  startOffset: starting face offset for second file
+  """
+
+  f1 = open(file1, "a")
+
+  f2 = open(file2)
+  debug("Merging ", file2)
+  number_of_vertices = startOffset
+  for ln in eachline(f2)
+    write(f1, ln)
+    number_of_vertices += 1
+  end
+  close(f2)
+
+  close(f1)
+
+  return number_of_vertices
+end @}
+
+As we can see the algorithm is very simple; what we do is appending the content of the second file into the first one and returns the number of appended vertices, which will be used as offsets for faces. This is the code for concatenation of faces files:
+
+@D merge faces file
+@{function mergeFacesFiles(file1, file2, facesOffset)
+  """
+  Support function for merging two faces files
+
+  file1: path of the first file
+  file2: path of the second file
+  facesOffset: offset for faces
+  """
+
+  f1 = open(file1, "a")
+
+  f2 = open(file2)
+  for ln in eachline(f2)
+    splitted = split(ln)
+    write(f1, "f ")
+    write(f1, string(parse(splitted[2]) + facesOffset, " "))
+    write(f1, string(parse(splitted[3]) + facesOffset, " "))
+    write(f1, string(parse(splitted[4]) + facesOffset, "\n"))
+  end
+  close(f2)
+
+  close(f1)
+end @}
+
+These concatenation functions, are called by the \texttt{mergeObjProcesses}, which is executed by a single Julia process:
+
+@D parallel merge obj process function
+@{function mergeObjProcesses(fileArray, facesOffset = Nothing)
+  """
+  Merge files on a single process
+
+  fileArray: Array containing files that will be merged
+  facesOffset (optional): if merging faces files, this array contains
+    offsets for every file
+    
+  if it is merging vertices files it returns the offset 
+  for the corresponding faces
+  """
+
+  if(contains(fileArray[1], string("_vtx.stl")))
+    # Merging vertices files
+    offsets = Array(Int, 0)
+    push!(offsets, countlines(fileArray[1]))
+    vertices_count = mergeVerticesFiles(fileArray[1], fileArray[2], countlines(fileArray[1]))
+    rm(fileArray[2]) # Removing merged file
+    push!(offsets, vertices_count)
+    for i in 3: length(fileArray)
+      vertices_count = mergeVerticesFiles(fileArray[1], fileArray[i], vertices_count)
+      rm(fileArray[i]) # Removing merged file
+      push!(offsets, vertices_count)
+    end
+    return offsets
+  else
+    # Merging faces files
+    mergeFacesFiles(fileArray[1], fileArray[2], facesOffset[1])
+    rm(fileArray[2]) # Removing merged file
+    for i in 3 : length(fileArray)
+      mergeFacesFiles(fileArray[1], fileArray[i], facesOffset[i - 1])
+      rm(fileArray[i]) # Removing merged file
+    end
+  end
+end @}
+
+The function can be called for both faces and vertices files; for the last case, however, we need to specify the \textit{facesOffset} parameter.
+
+Now we can put together the above functions with the following code:
+
+@D merge obj helper function
+@{function mergeObjHelper(vertices_files, faces_files)
+  """
+  Support function for mergeObj. It takes vertices and faces files
+  and executes a single merging step
+
+  vertices_files: Array containing vertices files
+  faces_files: Array containing faces files
+  """
+  numberOfImages = length(vertices_files)
+  taskArray = Array(Int, 0)
+  assignTasks(1, numberOfImages, taskArray)
+
+  # Now taskArray contains first files to merge
+  numberOfVertices = Array(Int, 0)
+  tasks = Array(RemoteRef, 0)
+  for i in 1 : length(taskArray) - 1
+    task = @@spawn mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)])
+    push!(tasks, task)
+  end
+
+  # Merging last vertices files
+  task = @@spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
+  push!(tasks, task)
+
+  for task in tasks
+    append!(numberOfVertices, fetch(task))
+  end
+
+  debug("NumberOfVertices = ", numberOfVertices)
+
+  # Merging faces files
+  tasks = Array(RemoteRef, 0)
+  for i in 1 : length(taskArray) - 1
+
+    task = @@spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
+                                    numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
+    push!(tasks, task)
+  end
+
+  #Merging last faces files
+  task = @@spawn mergeObjProcesses(faces_files[taskArray[length(taskArray)] : end],
+                                  numberOfVertices[taskArray[length(taskArray)] : end])
+
+  push!(tasks, task)
+
+  for task in tasks
+    wait(task)
+  end
+
+end @}
+
+As we can see, this is the code for distribution of our work among all processes. We have chosen to spawn a new process following the tree in Figure~\ref{fig:ParallelAlgorithm}, passing to the \texttt{mergeObjProcesses} function the files given to the task with the function \texttt{assignTasks}.
+
+Finally we just have to define the main function for parallel merging 
+
+@D merge obj parallel
+@{function mergeObjParallel(modelDirectory)
+  """
+  Merge stl files in a single obj file using a parallel
+  approach. Files will be recursively merged two by two
+  generating a tree where number of processes for every
+  step is maximized
+  Actually use of this function is discouraged. In fact
+  speedup is influenced by disk speed. It could work on
+  particular systems with parallel accesses on disks
+
+  modelDirectory: directory containing models
+  """
+
+  files = readdir(modelDirectory)
+
+  # Appending directory path to every file
+  files = map((s) -> string(modelDirectory, "/", s), files)
+
+  # While we have more than one vtx file and one faces file
+  while(length(files) != 2)
+    vertices_files = files[find(s -> contains(s,string("_vtx.stl")), files)]
+    faces_files = files[find(s -> contains(s,string("_faces.stl")), files)]
+
+    # Merging files
+    mergeObjHelper(vertices_files, faces_files)
+
+    files = readdir(modelDirectory)
+    files = map((s) -> string(modelDirectory, "/", s), files)
+  end
+
+  mergeVerticesFiles(files[2], files[1], 0)
+  mv(files[2], string(modelDirectory, "/model.obj"))
+  rm(files[1])
+
+end @}
+
+\subsection{Load models from files}\label{sec:loadObj}
+
+Another important functionality for our library, consists in model loading from our faces and vertices files. This is useful when passing from a pipeline step to another one. For simplicity, we offer a unique function that loads an array of vertices files (with the corresponding array of faces files), merge the values into a unique model and returns it.
+
+@D Load models from file
+@{function getModelsFromFiles(arrayV, arrayFV)
+  """
+  Get a LAR models for two arrays of vertices
+  and faces files
+
+  arrayV: Array containing all vertices files
+  arrayFV: Array containing all faces files
+  """
+
+  V = Array(Array{Float64}, 0)
+  FV = Array(Array{Int}, 0)
+  offset = 0
+
+  for i in 1:length(arrayV)
+    if isfile(arrayFV[i])
+      f_FV = open(arrayFV[i])
+
+      for ln in eachline(f_FV)
+        splitted = split(ln)
+        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) +
+	     offset, parse(splitted[4]) + offset])
+      end
+      close(f_FV)
+
+      f_V = open(arrayV[i])
+      for ln in eachline(f_V)
+        splitted = split(ln)
+        push!(V, [parse(splitted[2]), parse(splitted[3]),
+             parse(splitted[4])])
+        offset += 1
+      end
+      close(f_V)
+    end
+  end
+  return V, FV
+end @}
 
 %===============================================================================
 \section{Exporting the library}
@@ -2780,242 +3039,19 @@ export writeToObj, mergeObj, mergeObjParallel
 
 @< serial file merge @>
 
-function assignTasks(startInd, endInd, taskArray)
-  """
-  This function choose the first files to merge
-  creating a tree where number of processes is maximized
+@< assign tasks @>
 
-  startInd: starting index for array subdivision
-  endInd: end index for array subdivision
-  taskArray: array containing indices of files to merge for first
-  """
-  if (endInd - startInd == 2)
-    push!(taskArray, startInd)
-  elseif (endInd - startInd < 2)
-    if (endInd % 4 != 0 && startInd != endInd)
-      # Stop recursion on this branch
-      push!(taskArray, startInd)
-    end
-    # Stop recursion doing nothing
-  else
-    assignTasks(startInd, startInd + trunc((endInd - startInd) / 2), taskArray)
-    assignTasks(startInd + trunc((endInd - startInd) / 2) + 1, endInd, taskArray)
-  end
-end
+@< merge vertices file @>
 
-function mergeVerticesFiles(file1, file2, startOffset)
-  """
-  Support function for merging two vertices files.
-  Returns the number of vertices of the merged file
+@< merge faces file @>
 
-  file1: path of the first file
-  file2: path of the second file
-  startOffset: starting face offset for second file
-  """
+@< parallel merge obj process function @>
 
-  f1 = open(file1, "a")
+@< merge obj helper function @>
 
-  f2 = open(file2)
-  debug("Merging ", file2)
-  number_of_vertices = startOffset
-  for ln in eachline(f2)
-    write(f1, ln)
-    number_of_vertices += 1
-  end
-  close(f2)
+@< merge obj parallel @>
 
-  close(f1)
-
-  return number_of_vertices
-end
-
-
-function mergeFacesFiles(file1, file2, facesOffset)
-  """
-  Support function for merging two faces files
-
-  file1: path of the first file
-  file2: path of the second file
-  facesOffset: offset for faces
-  """
-
-  f1 = open(file1, "a")
-
-  f2 = open(file2)
-  for ln in eachline(f2)
-    splitted = split(ln)
-    write(f1, "f ")
-    write(f1, string(parse(splitted[2]) + facesOffset, " "))
-    write(f1, string(parse(splitted[3]) + facesOffset, " "))
-    write(f1, string(parse(splitted[4]) + facesOffset, "\n"))
-  end
-  close(f2)
-
-  close(f1)
-end
-
-function mergeObjProcesses(fileArray, facesOffset = Nothing)
-  """
-  Merge files on a single process
-
-  fileArray: Array containing files that will be merged
-  facesOffset (optional): if merging faces files, this array contains
-    offsets for every file
-  """
-
-  if(contains(fileArray[1], string("_vtx.stl")))
-    # Merging vertices files
-    offsets = Array(Int, 0)
-    push!(offsets, countlines(fileArray[1]))
-    vertices_count = mergeVerticesFiles(fileArray[1], fileArray[2], countlines(fileArray[1]))
-    rm(fileArray[2]) # Removing merged file
-    push!(offsets, vertices_count)
-    for i in 3: length(fileArray)
-      vertices_count = mergeVerticesFiles(fileArray[1], fileArray[i], vertices_count)
-      rm(fileArray[i]) # Removing merged file
-      push!(offsets, vertices_count)
-    end
-    return offsets
-  else
-    # Merging faces files
-    mergeFacesFiles(fileArray[1], fileArray[2], facesOffset[1])
-    rm(fileArray[2]) # Removing merged file
-    for i in 3 : length(fileArray)
-      mergeFacesFiles(fileArray[1], fileArray[i], facesOffset[i - 1])
-      rm(fileArray[i]) # Removing merged file
-    end
-  end
-end
-
-function mergeObjHelper(vertices_files, faces_files)
-  """
-  Support function for mergeObj. It takes vertices and faces files
-  and execute a single merging step
-
-  vertices_files: Array containing vertices files
-  faces_files: Array containing faces files
-  """
-  numberOfImages = length(vertices_files)
-  taskArray = Array(Int, 0)
-  assignTasks(1, numberOfImages, taskArray)
-
-  # Now taskArray contains first files to merge
-  numberOfVertices = Array(Int, 0)
-  tasks = Array(RemoteRef, 0)
-  for i in 1 : length(taskArray) - 1
-    task = @@spawn mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)])
-    push!(tasks, task)
-    #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[i] : (taskArray[i + 1] - 1)]))
-  end
-
-  # Merging last vertices files
-  task = @@spawn mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end])
-  push!(tasks, task)
-  #append!(numberOfVertices, mergeObjProcesses(vertices_files[taskArray[length(taskArray)] : end]))
-
-
-  for task in tasks
-    append!(numberOfVertices, fetch(task))
-  end
-
-  debug("NumberOfVertices = ", numberOfVertices)
-
-  # Merging faces files
-  tasks = Array(RemoteRef, 0)
-  for i in 1 : length(taskArray) - 1
-
-    task = @@spawn mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
-                                    numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
-    push!(tasks, task)
-
-    #mergeObjProcesses(faces_files[taskArray[i] : (taskArray[i + 1] - 1)],
-    #                  numberOfVertices[taskArray[i] : (taskArray[i + 1] - 1)])
-  end
-
-  #Merging last faces files
-  task = @@spawn mergeObjProcesses(faces_files[taskArray[length(taskArray)] : end],
-                                  numberOfVertices[taskArray[length(taskArray)] : end])
-
-  push!(tasks, task)
-  #mergeObjProcesses(faces_files[taskArray[length(taskArray)] : end],
-  #                    numberOfVertices[taskArray[length(taskArray)] : end])
-
-  for task in tasks
-    wait(task)
-  end
-
-end
-
-function mergeObjParallel(modelDirectory)
-  """
-  Merge stl files in a single obj file using a parallel
-  approach. Files will be recursively merged two by two
-  generating a tree where number of processes for every
-  step is maximized
-  Actually use of this function is discouraged. In fact
-  speedup is influenced by disk speed. It could work on
-  particular systems with parallel accesses on disks
-
-  modelDirectory: directory containing models
-  """
-
-  files = readdir(modelDirectory)
-
-  # Appending directory path to every file
-  files = map((s) -> string(modelDirectory, "/", s), files)
-
-  # While we have more than one vtx file and one faces file
-  while(length(files) != 2)
-    vertices_files = files[find(s -> contains(s,string("_vtx.stl")), files)]
-    faces_files = files[find(s -> contains(s,string("_faces.stl")), files)]
-
-    # Merging files
-    mergeObjHelper(vertices_files, faces_files)
-
-    files = readdir(modelDirectory)
-    files = map((s) -> string(modelDirectory, "/", s), files)
-  end
-
-  mergeVerticesFiles(files[2], files[1], 0)
-  mv(files[2], string(modelDirectory, "/model.obj"))
-  rm(files[1])
-
-end
-
-function getModelsFromFiles(arrayV, arrayFV)
-  """
-  Get a LAR models for two arrays of vertices
-  and faces files
-
-  arrayV: Array containing all vertices files
-  arrayFV: Array containing all faces files
-  """
-
-  V = Array(Array{Float64}, 0)
-  FV = Array(Array{Int}, 0)
-  offset = 0
-
-  for i in 1:length(arrayV)
-    if isfile(arrayFV[i])
-      f_FV = open(arrayFV[i])
-
-      for ln in eachline(f_FV)
-        splitted = split(ln)
-        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
-      end
-      close(f_FV)
-
-      f_V = open(arrayV[i])
-      for ln in eachline(f_V)
-        splitted = split(ln)
-        push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
-        offset += 1
-      end
-      close(f_V)
-    end
-  end
-  return V, FV
-end
+@< Load models from file @>
 end
 @}
 
