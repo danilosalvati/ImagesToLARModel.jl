@@ -9,6 +9,7 @@
 
 ## PngStack2Array3dJulia
 
+- Add crop on z axis
 - Resolve this for Julia 0.4 WARNING: imwrite(img,filename; kwargs...) is deprecated, use save(filename,img; kwargs...) instead.
 
 ## LARUtils
