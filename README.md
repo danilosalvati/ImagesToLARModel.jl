@@ -16,7 +16,7 @@ Use
  or:
  
     using(ImagesToLARModel)
-    convertImagesToLARModel(<Input directory>, <Output directory>, <BestImage>, <Border x>, <Border y>, <Border z>[, <DEBUG_LEVEL>, <parallelMerge>])
+    convertImagesToLARModel(<Input directory>, <Output directory>, <BestImage>, <Border x>, <Border y>, <Border z>[, <DEBUG_LEVEL>, <parallelMerge>, <noise_shape>])
 
 This is an example of a valid JSON configuration file:
 
@@ -28,7 +28,9 @@ This is an example of a valid JSON configuration file:
       "ny": border y,
       "nz": border z,
       "DEBUG_LEVEL": julia Logging level
-      "parallelMerge": "true" or "false" 
+      "parallelMerge": "true" or "false",
+      "noise_shape": A number which indicates the intensity of the denoising
+                     filter (0 if you want to disable denoising)
     }
 
 These are the accepted parameters:
@@ -44,3 +46,4 @@ These are the accepted parameters:
     - ERROR (4 for JSON configuration file)
     - CRITICAL (5 for JSON configuration file)
 - parallelMerge: Choose if you want to merge model files using a distribuite algorithm or not (experimental)
+- noise_shape: Intensity of the denoising filter for images (0 if you want to disable it)
