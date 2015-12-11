@@ -32,11 +32,8 @@ function images2LARModel(nx, ny, nz, bestImage,
 
   tempDirectory = string(outputDirectory,"TEMP/")
 
-  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory,
-                                                     bestImage, noise_shape_detect)
-
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
-                                      string(tempDirectory,newBestImage))
+                                      string(inputDirectory, bestImage))
   imageDepth = length(readdir(tempDirectory))
 
   # Computing border matrix
@@ -50,7 +47,7 @@ function images2LARModel(nx, ny, nz, bestImage,
 
   # Starting images conversion and border computation
   info("Starting images conversion")
-  startImageConversion(tempDirectory, newBestImage, outputDirectory, borderFilename,
+  startImageConversion(inputDirectory, bestImage, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
                        numberOfClusters, parallelMerge)

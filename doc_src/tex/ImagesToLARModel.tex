@@ -182,14 +182,81 @@ After this line we can now import all modules defined here and export public fun
 @D modules import ImagesToLARModel
 @{import JSON
 import ImagesConversion
+import PngStack2Array3dJulia
 
 using Logging
 
-export convertImagesToLARModel
+export convertImagesToLARModel, prepareData
 
 @}
 
-\subsection{Input loading}\label{sec:input}
+\subsection{Input loading for data preparation}\label{sec:inputDataPreparation}
+
+Data preparation (see Section~\ref{sec:dataPreparation} takes several parameters:
+
+\begin{itemize}
+ \item inputDirectory: The path of the directory containing the stack of images
+ \item outputDirectory: The path of the directory with the output images
+ \item crop: Parameter for images resizing (they can be extended or cropped)
+ \item noise\_shape: Intensity of the denoising filter for images (0 if you want to disable it)
+\end{itemize}
+
+Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
+
+@D load JSON configuration for data preparation
+@{function loadConfiguration(configurationFile)
+  """
+  load parameters from JSON file
+
+  configurationFile: Path of the configuration file
+  """
+
+  configuration = JSON.parse(configurationFile)
+
+
+  crop = Void
+  try
+    crop = configuration["crop"]
+  catch
+  end
+  
+  noise_shape = 0
+  try
+    noise_shape = configuration["noise_shape"]
+  catch
+  end
+  
+  return configuration["inputDirectory"], configuration["outputDirectory"],
+        crop, noise_shape
+
+end
+@}
+
+A valid JSON file has the following structure:
+\begin{tabbing}
+\{ \= \\
+\>  ``inputDirectory": ``Path of the input directory",\\
+\>  ``outputDirectory": ``Path of the output directory",\\
+\>  ``crop": Parameter for images resizing (they can be extended or cropped)\\
+\>  ``noise\_shape": A number which indicates the intensity of the denoising \\
+filter (0 if you want to disable denoising)\\
+\}\\
+\end{tabbing}
+
+For example, we can write:
+
+\begin{tabbing}
+\{ \= \\
+\>  ``inputDirectory": ``/home/juser/IMAGES/"\\
+\>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
+\>  ``crop": [[1,800],[1,600],[1,50]]\\
+\>  ``noise\_shape": 0\\
+\}\\
+\end{tabbing}
+
+\textit{crop} and \textit{noise\_shape} are optional parameters
+
+\subsection{Input loading for images conversion}\label{sec:input}
 
 Images conversion takes several parameters:
 
@@ -284,7 +351,49 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
 
 \textit{parallelMerge} and \textit{noise\_shape} are optional parameters
 
-\subsection{Starting conversion}\label{sec:input}
+
+\subsection{Data preparation}\label{sec:dataPreparation}
+
+@D data preparation from JSON file
+@{function prepareData(configurationFile)
+  """
+  Prepare the input data converting all files into png
+  format with the desired resizing and denoising
+
+  configurationFile: Path of the configuration file
+  """
+  inputPath, outputPath, crop,
+	  noise_shape = loadConfiguration(open(configurationFile))
+
+  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape)
+      
+end
+@}
+
+@D manual data preparation
+@{function prepareData(inputPath, outputPath,
+		       crop = Void, noise_shape = 0)
+  """
+  Prepare the input data converting all files into png
+  format with the desired resizing and denoising
+
+  inputPath: Directory containing the stack of images
+  outputPath: Directory which will contain the output
+  crop: Parameter for images resizing (they can be
+        extended or cropped)
+  noise_shape: The shape for image denoising
+  """
+  # Create output directory
+  try
+    mkpath(outputDirectory)
+  catch
+  end
+
+  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape)
+end
+@}
+
+\subsection{Starting conversion}\label{sec:conversion}
 
 As we have already said, this module has the only responsibility to collect data input and starts other modules. These are the functions that start the process and the only exposed to the application users:
 
@@ -382,7 +491,6 @@ Now we can examine single parts of conversion process. First of all we need to o
 gray_img = convert(Image{ColorTypes.Gray}, rgb_img) @}
     
 As we can see, we first need to convert image to RGB and then reconverting to greyscale. Without the RGB conversion these rows will return a stackoverflow error due to the presence of alpha channel
-
 
 @D Image resizing
 @{if(crop!= Void)
@@ -790,11 +898,8 @@ Finally we can start conversion with all these parameters calling \texttt{startI
 
   tempDirectory = string(outputDirectory,"TEMP/")
 
-  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory,
-						     bestImage, noise_shape_detect)
-
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
-				      string(tempDirectory,newBestImage))
+				      string(inputDirectory, bestImage))
   imageDepth = length(readdir(tempDirectory))
 
   # Computing border matrix
@@ -808,7 +913,7 @@ Finally we can start conversion with all these parameters calling \texttt{startI
 
   # Starting images conversion and border computation
   info("Starting images conversion")
-  startImageConversion(tempDirectory, newBestImage, outputDirectory, borderFilename,
+  startImageConversion(inputDirectory, bestImage, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
                        numberOfClusters, parallelMerge)

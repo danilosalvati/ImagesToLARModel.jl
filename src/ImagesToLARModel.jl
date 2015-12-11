@@ -5,10 +5,11 @@ push!(LOAD_PATH, Pkg.dir("ImagesToLARModel/src"))
 
 import JSON
 import ImagesConversion
+import PngStack2Array3dJulia
 
 using Logging
 
-export convertImagesToLARModel
+export convertImagesToLARModel, prepareData
 
 
 function loadConfiguration(configurationFile)
