@@ -41,9 +41,9 @@ function loadConfiguration(configurationFile)
 
 end
 
-function loadConfiguration(configurationFile)
+function loadConfigurationPrepareData(configurationFile)
   """
-  load parameters from JSON file
+  load parameters from JSON file for data preparation
 
   configurationFile: Path of the configuration file
   """
@@ -76,7 +76,7 @@ function prepareData(configurationFile)
   configurationFile: Path of the configuration file
   """
   inputPath, outputPath, crop,
-          noise_shape = loadConfiguration(open(configurationFile))
+          noise_shape = loadConfigurationPrepareData(open(configurationFile))
 
   prepareData(inputPath, outputPath, crop, noise_shape)
       

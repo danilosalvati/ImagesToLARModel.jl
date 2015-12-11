@@ -204,9 +204,9 @@ Data preparation (see Section~\ref{sec:dataPreparation} takes several parameters
 Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
 
 @D load JSON configuration for data preparation
-@{function loadConfiguration(configurationFile)
+@{function loadConfigurationPrepareData(configurationFile)
   """
-  load parameters from JSON file
+  load parameters from JSON file for data preparation
 
   configurationFile: Path of the configuration file
   """
@@ -354,7 +354,7 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
   configurationFile: Path of the configuration file
   """
   inputPath, outputPath, crop,
-	  noise_shape = loadConfiguration(open(configurationFile))
+	  noise_shape = loadConfigurationPrepareData(open(configurationFile))
 
   prepareData(inputPath, outputPath, crop, noise_shape)
       
@@ -880,7 +880,7 @@ Later we can start conversion with all these parameters calling \texttt{startIma
 
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
 				      string(inputDirectory, bestImage))
-  imageDepth = length(readdir(tempDirectory))
+  imageDepth = length(readdir(inputDirectory))
 
   # Computing border matrix
   info("Computing border matrix")

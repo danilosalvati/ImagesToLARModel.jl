@@ -26,7 +26,7 @@ function images2LARModel(nx, ny, nz, bestImage,
 
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
                                       string(inputDirectory, bestImage))
-  imageDepth = length(readdir(tempDirectory))
+  imageDepth = length(readdir(inputDirectory))
 
   # Computing border matrix
   info("Computing border matrix")
