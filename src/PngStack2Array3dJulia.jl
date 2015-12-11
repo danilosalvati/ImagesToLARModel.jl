@@ -23,7 +23,7 @@ function resizeImage(image, crop)
   if(crop[1][2] > dim[1])
     # Extending the images on the x axis
     imArray = raw(image)
-    zeroArray = zeros(UInt8, dim[2])
+    zeroArray = zeros(Uint8, dim[2])
     for i in (1 : (crop[1][2] - dim[1]))
       imArray = vcat(imArray, transpose(zeroArray))
     end
@@ -33,7 +33,7 @@ function resizeImage(image, crop)
   if(crop[2][2] > dim[2])
     # Extending the images on the y axis
     imArray = raw(image)
-    zeroArray = zeros(UInt8, size(image)[1])
+    zeroArray = zeros(Uint8, size(image)[1])
     for i in (1: (crop[2][2] - dim[2]))
       imArray = hcat(imArray, zeroArray)
     end
@@ -65,25 +65,25 @@ function convertImages(inputPath, outputPath,
     rgb_img = convert(Image{ColorTypes.RGB}, img)
     gray_img = convert(Image{ColorTypes.Gray}, rgb_img) 
     if(crop!= Void)
-      resizeImage(gray_img, crop)
+      gray_img = resizeImage(gray_img, crop)
     end 
 
     # Denoising
     if noise_shape_detect != 0
-      imArray = raw(img)
+      imArray = raw(gray_img)
       imArray = ndimage.median_filter(imArray, noise_shape_detect)
-      img = grayim(imArray)
+      gray_img = grayim(imArray)
     end 
     
    outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")
-   imwrite(img, outputFilename)
+   imwrite(gray_img, outputFilename)
 
   end
 
   # Adding another image if they are odd
-  if(numberOfImages % 2 != 0)
+  if(length(imageFiles) % 2 != 0)
     debug("Odd images, adding one")  
-    imageWidth, imageHeight = getImageData(string(outputPath, "/", newBestImage))
+    imageWidth, imageHeight = getImageData(string(outputPath, "/", imageFiles[1]))
     
     if(imageWidth % 2 != 0)
       imageWidth -= 1
@@ -95,8 +95,7 @@ function convertImages(inputPath, outputPath,
     
     imArray = zeros(Uint8, imageWidth, imageHeight)
     img = grayim(imArray)
-    outputFilename = string(outputPath, "/", 
-                        outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
+    outputFilename = string(outputPath, "/", "zz.png")
     imwrite(img, outputFilename)
   end 
 end

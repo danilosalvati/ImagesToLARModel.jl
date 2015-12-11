@@ -247,9 +247,9 @@ For example, we can write:
 
 \begin{tabbing}
 \{ \= \\
-\>  ``inputDirectory": ``/home/juser/IMAGES/"\\
+\>  ``inputDirectory": ``/home/juser/IMAGES/",\\
 \>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
-\>  ``crop": [[1,800],[1,600],[1,50]]\\
+\>  ``crop": [[1,800],[1,600],[1,50]],\\
 \>  ``noise\_shape": 0\\
 \}\\
 \end{tabbing}
@@ -267,7 +267,6 @@ Images conversion takes several parameters:
  \item nx, ny, nz: Sizes of the grid chosen for image segmentation (see section~\ref{sec:PngStack2Array3dJulia})
  \item DEBUG\_LEVEL: Debug level for Julia logger
  \item parallelMerge (experimental): Choose between sequential or parallel merge of files (see section~\ref{sec:Model2Obj})
- \item noise\_shape: Intensity of the denoising filter for images (0 if you want to disable it)
 \end{itemize}
 
 Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
@@ -293,18 +292,12 @@ Because of their number it has been realized a function for simply loading them 
     end
   catch
   end
-  
-  noise_shape = 0
-  try
-    noise_shape = configuration["noise_shape"]
-  catch
-  end
-  
+   
   return configuration["inputDirectory"], configuration["outputDirectory"],
 	configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
         DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
-        parallelMerge, noise_shape
+        parallelMerge
 
 end
 @}
@@ -320,8 +313,6 @@ A valid JSON file has the following structure:
 \>  ``nz": border z,\\
 \>  ``DEBUG\_LEVEL": julia Logging level (can be a number from 1 to 5)\\
 \>  ``parallelMerge": ``true" or ``false" \\
-\>  ``noise\_shape": A number which indicates the intensity of the denoising \\
-filter (0 if you want to disable denoising)\\
 \}\\
 \end{tabbing}
 
@@ -329,7 +320,7 @@ For example, we can write:
 
 \begin{tabbing}
 \{ \= \\
-\>  ``inputDirectory": ``/home/juser/IMAGES/"\\
+\>  ``inputDirectory": ``/home/juser/IMAGES/",\\
 \>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
 \>  ``bestImage": ``0009.tiff",\\
 \>  ``nx": 2,\\
@@ -349,7 +340,7 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
  \item CRITICAL
 \end{itemize}
 
-\textit{parallelMerge} and \textit{noise\_shape} are optional parameters
+\textit{parallelMerge} is an optional parameter
 
 
 \subsection{Data preparation}\label{sec:dataPreparation}
@@ -365,7 +356,7 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
   inputPath, outputPath, crop,
 	  noise_shape = loadConfiguration(open(configurationFile))
 
-  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape)
+  prepareData(inputPath, outputPath, crop, noise_shape)
       
 end
 @}
@@ -385,7 +376,7 @@ end
   """
   # Create output directory
   try
-    mkpath(outputDirectory)
+    mkpath(outputPath)
   catch
   end
 
@@ -406,16 +397,16 @@ As we have already said, this module has the only responsibility to collect data
   configurationFile: Path of the configuration file
   """
   inputDirectory, outputDirectory, bestImage, nx, ny, nz,
-      DEBUG_LEVEL, parallelMerge, noise_shape = loadConfiguration(open(configurationFile))
+      DEBUG_LEVEL, parallelMerge = loadConfiguration(open(configurationFile))
   convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
-			nx, ny, nz, DEBUG_LEVEL, parallelMerge, noise_shape)
+			nx, ny, nz, DEBUG_LEVEL, parallelMerge)
 end
 @}
 
 @D Start manual conversion
 @{function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
                                  nx, ny, nz, DEBUG_LEVEL = INFO,
-                                 parallelMerge = false, noise_shape = 0)
+                                 parallelMerge = false)
   """
   Start conversion of a stack of images into a 3D model
 
@@ -431,7 +422,6 @@ end
     - CRITICAL
   parallelMerge: Choose if you want to use the algorithm
   for parallel merging (experimental)
-  noise_shape: The shape for image denoising
   """
   # Create output directory
   try
@@ -441,7 +431,7 @@ end
 
   Logging.configure(level=DEBUG_LEVEL)
   ImagesConversion.images2LARModel(nx, ny, nz, bestImage,
-	  inputDirectory, outputDirectory, parallelMerge, noise_shape)
+	  inputDirectory, outputDirectory, parallelMerge)
 end
 @}
 
@@ -494,7 +484,7 @@ As we can see, we first need to convert image to RGB and then reconverting to gr
 
 @D Image resizing
 @{if(crop!= Void)
-  resizeImage(gray_img, crop)
+  gray_img = resizeImage(gray_img, crop)
 end @}
     
 The code for image resizing will be better explained in section~\ref{sec:imageResize}.
@@ -502,9 +492,9 @@ Next we just have to add one image if they are odd (for same reasons we need eve
     
 @D Add one image
 @{# Adding another image if they are odd
-if(numberOfImages % 2 != 0)
+if(length(imageFiles) % 2 != 0)
   debug("Odd images, adding one")  
-  imageWidth, imageHeight = getImageData(string(outputPath, "/", newBestImage))
+  imageWidth, imageHeight = getImageData(string(outputPath, "/", imageFiles[1]))
   
   if(imageWidth % 2 != 0)
     imageWidth -= 1
@@ -516,8 +506,7 @@ if(numberOfImages % 2 != 0)
   
   imArray = zeros(Uint8, imageWidth, imageHeight)
   img = grayim(imArray)
-  outputFilename = string(outputPath, "/", 
-		      outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
+  outputFilename = string(outputPath, "/", "zz.png")
   imwrite(img, outputFilename)
 end @}
 
@@ -527,9 +516,9 @@ Finally we have to reduce noise on the image. The best choice is using a \textit
 @D Reduce noise
 @{# Denoising
 if noise_shape_detect != 0
-  imArray = raw(img)
+  imArray = raw(gray_img)
   imArray = ndimage.median_filter(imArray, noise_shape_detect)
-  img = grayim(imArray)
+  gray_img = grayim(imArray)
 end @}
 
 Where imArray is an array containing all raw data from images
@@ -563,7 +552,7 @@ Finally this is the code for the entire function:
     @< Reduce noise @>
     
    outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")
-   imwrite(img, outputFilename)
+   imwrite(gray_img, outputFilename)
 
   end
 
@@ -588,7 +577,7 @@ end
   if(crop[1][2] > dim[1])
     # Extending the images on the x axis
     imArray = raw(image)
-    zeroArray = zeros(UInt8, dim[2])
+    zeroArray = zeros(Uint8, dim[2])
     for i in (1 : (crop[1][2] - dim[1]))
       imArray = vcat(imArray, transpose(zeroArray))
     end
@@ -598,7 +587,7 @@ end
   if(crop[2][2] > dim[2])
     # Extending the images on the y axis
     imArray = raw(image)
-    zeroArray = zeros(UInt8, size(image)[1])
+    zeroArray = zeros(Uint8, size(image)[1])
     for i in (1: (crop[2][2] - dim[2]))
       imArray = hcat(imArray, zeroArray)
     end
@@ -873,14 +862,13 @@ export images2LARModel
 @}
 
 \subsection{Data preparation}\label{sec:ImagesConversionDataPreparation}
-As a first thing, we will see how to prepare our data for conversion process. Firstly we need to convert input images to greyscale png; so we need to create a temporary directory for saving them.\\
-Later, we need to compute the LAR boundary operator for finding boundaries of our cells (for the generation see section~\ref{sec:GenerateBorderMatrix}) getting width and height from our images.\\
-Finally we can start conversion with all these parameters calling \texttt{startImageConversion} function, which will be explained in next subsection.
+As a first thing, we will see how to prepare our data for conversion process. Firstly we need to compute the LAR boundary operator for finding boundaries of our cells (for the generation see section~\ref{sec:GenerateBorderMatrix}) getting width and height from our images.\\
+Later we can start conversion with all these parameters calling \texttt{startImageConversion} function, which will be explained in next subsection.
 
 @D main function for ImagesConversion
 @{function images2LARModel(nx, ny, nz, bestImage,
 			inputDirectory, outputDirectory,
-			parallelMerge, noise_shape_detect = 0)
+			parallelMerge)
   """
   Convert a stack of images into a 3d model
   """
@@ -889,14 +877,6 @@ Finally we can start conversion with all these parameters calling \texttt{startI
 
   numberOfClusters = 2 # Number of clusters for
                        # images segmentation
-
-  info("Moving images into temp directory")
-  try
-    mkdir(string(outputDirectory, "TEMP"))
-  catch
-  end
-
-  tempDirectory = string(outputDirectory,"TEMP/")
 
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
 				      string(inputDirectory, bestImage))
@@ -3039,6 +3019,9 @@ end @}
 
 @< modules import ImagesToLARModel @>
 @< load JSON configuration @>
+@< load JSON configuration for data preparation @>
+@< data preparation from JSON file @>
+@< manual data preparation @>
 @< Start conversion from JSON file @>
 @< Start manual conversion @>
 end
