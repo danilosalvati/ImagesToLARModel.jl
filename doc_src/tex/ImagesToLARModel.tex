@@ -562,6 +562,17 @@ end
 
 \subsubsection{Image resizing}\label{sec:imageResize}
 
+Now we will see in detail how to resize images. The most important parameter is \textit{crop}, which is a list of numbers that contains the desired dimensions for the stack of images. Given the following list $[[xcropStart, xcropEnd],[ycropStart, ycropEnd],[zcropStart, zcropEnd]]$ we can have different cases based on the list values, as we can see in Figure~\ref{fig:resizeCases}:
+
+\begin{figure}[htbp] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=8.5cm]{images/resizeCases.png} \hfill
+   \caption{Some interesting resize cases. (a) The original image (b) Extension on the x dimension (c) Extension on the y dimension (d) Extension on both dimensions (e) Crop of both x and y (f) Crop of x and extension of y}
+   \label{fig:resizeCases}
+\end{figure}
+
+So with the same parameter we can both resize or extend images. In particular, when we have to extend them, we have to get the raw data and concatenate a zeroed array to it. On the other hand, for image cropping we can use the \texttt{subim} function from the \texttt{Images} package.
+
 @D image resizing
 @{function resizeImage(image, crop)
   """
@@ -761,7 +772,7 @@ image3d[page] = tmp @}
    \includegraphics[width=0.30\linewidth]{images/denoised.png} \hfill
    \includegraphics[width=0.30\linewidth]{images/quantized.png} \hfill
    \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
-   \label{fig:rawImage}
+   \label{fig:imageTransformation}
 \end{figure}
 
 We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This could happen when the images is completely empty or it has only colored pixels. So, we need to check this cases and fill the assignments array \texttt{qnt} with the right values based on the \texttt{centroids} parameter.
@@ -826,7 +837,7 @@ This algorithm is very simple, however we does not considered problems concernin
    \includegraphics[width=0.45\linewidth]{images/imageGrid.png} \hfill
    \includegraphics[width=0.45\linewidth]{images/imageGrid3d.png}
    \caption{The grid used for parallel computation (a) 2D grid on a single image (b) 3D grid for the stack of images}
-   \label{fig:rawImage}
+   \label{fig:grid}
 \end{figure}
 
 So, instead of converting the entire model with a unique process, we can subdivide the input among a lot of processes, where every process will execute the conversion process on a small number of \textbf{blocks} according to the grid subdivision.\\
