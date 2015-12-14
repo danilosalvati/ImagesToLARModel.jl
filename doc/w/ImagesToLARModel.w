@@ -484,6 +484,7 @@ As we can see, we first need to convert image to RGB and then reconverting to gr
 
 @D Image resizing
 @{if(crop!= Void)
+  # Resize images on x-axis and y-axis
   gray_img = resizeImage(gray_img, crop)
 end @}
     
@@ -544,6 +545,8 @@ Finally this is the code for the entire function:
 
   imageFiles = readdir(inputPath)
   
+  @< Resize images on z-axis @>
+  
   for imageFile in imageFiles
     img = imread(string(inputPath, imageFile))
     @< Greyscale conversion @>
@@ -562,7 +565,7 @@ end
 
 \subsubsection{Image resizing}\label{sec:imageResize}
 
-Now we will see in detail how to resize images. The most important parameter is \textit{crop}, which is a list of numbers that contains the desired dimensions for the stack of images. Given the following list $[[xcropStart, xcropEnd],[ycropStart, ycropEnd],[zcropStart, zcropEnd]]$ we can have different cases based on the list values, as we can see in Figure~\ref{fig:resizeCases}:
+Now we will see in detail how to resize images on x and y axis. The most important parameter is \textit{crop}, which is a list of numbers that contains the desired dimensions for the stack of images.\\ Given the list $[[xcropStart, xcropEnd],[ycropStart, ycropEnd],[zcropStart, zcropEnd]]$ we can have different cases based on the list values, as we can see in Figure~\ref{fig:resizeCases}.
 
 \begin{figure}[htbp] %  figure placement: here, top, bottom
    \centering
@@ -605,6 +608,26 @@ So with the same parameter we can both resize or extend images. In particular, w
     image = grayim(imArray)
   end
   return subim(image, crop[1][1]:crop[1][2], crop[2][1]:crop[2][2])
+end @}
+
+However our stack of images have three dimensions, where the z-axis is represented by the number of images. So the third list for the crop parameters resize the stack removing or adding other images.
+
+@D Resize images on z-axis
+@{#Resizing on the z axis
+if(crop!= Void)
+  numberOfImages = length(imageFiles)
+  if(crop[3][2] > numberOfImages)
+    imageWidth = crop[1][2] - crop[1][1] + 1
+    imageHeight = crop[2][2] - crop[2][1] + 1
+    for i in 1 : crop[3][2] - numberOfImages
+      imArray = zeros(Uint8, imageWidth, imageHeight)
+      img = grayim(imArray)
+      outputFilename = string(outputPath, "/", imageFiles[end][1:rsearch(imageFiles[end], ".")[1]],
+			      "-added-", i ,".png")
+      imwrite(img, outputFilename)
+    end 
+  end
+  imageFiles = imageFiles[crop[3][1]:min(numberOfImages, crop[3][2])]
 end @}
 
 \subsection{Getting data from a png}\label{sec:getData}

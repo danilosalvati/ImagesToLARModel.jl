@@ -60,11 +60,29 @@ function convertImages(inputPath, outputPath,
 
   imageFiles = readdir(inputPath)
   
+  #Resizing on the z axis
+  if(crop!= Void)
+    numberOfImages = length(imageFiles)
+    if(crop[3][2] > numberOfImages)
+      imageWidth = crop[1][2] - crop[1][1] + 1
+      imageHeight = crop[2][2] - crop[2][1] + 1
+      for i in 1 : crop[3][2] - numberOfImages
+        imArray = zeros(Uint8, imageWidth, imageHeight)
+        img = grayim(imArray)
+        outputFilename = string(outputPath, "/", imageFiles[end][1:rsearch(imageFiles[end], ".")[1]],
+                                "-added-", i ,".png")
+        imwrite(img, outputFilename)
+      end 
+    end
+    imageFiles = imageFiles[crop[3][1]:min(numberOfImages, crop[3][2])]
+  end 
+  
   for imageFile in imageFiles
     img = imread(string(inputPath, imageFile))
     rgb_img = convert(Image{ColorTypes.RGB}, img)
     gray_img = convert(Image{ColorTypes.Gray}, rgb_img) 
     if(crop!= Void)
+      # Resize images on x-axis and y-axis
       gray_img = resizeImage(gray_img, crop)
     end 
 
