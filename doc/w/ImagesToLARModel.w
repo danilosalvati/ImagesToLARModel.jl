@@ -489,28 +489,6 @@ As we can see, we first need to convert image to RGB and then reconverting to gr
 end @}
     
 The code for image resizing will be better explained in section~\ref{sec:imageResize}.
-Next we just have to add one image if they are odd (for same reasons we need even image dimensions)
-    
-@D Add one image
-@{# Adding another image if they are odd
-if(length(imageFiles) % 2 != 0)
-  debug("Odd images, adding one")  
-  imageWidth, imageHeight = getImageData(string(outputPath, "/", imageFiles[1]))
-  
-  if(imageWidth % 2 != 0)
-    imageWidth -= 1
-  end
-  
-  if(imageHeight % 2 != 0)
-    imageHeight -= 1
-  end  
-  
-  imArray = zeros(Uint8, imageWidth, imageHeight)
-  img = grayim(imArray)
-  outputFilename = string(outputPath, "/", "zz.png")
-  imwrite(img, outputFilename)
-end @}
-
 
 Finally we have to reduce noise on the image. The best choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
 
@@ -558,8 +536,6 @@ Finally this is the code for the entire function:
    imwrite(gray_img, outputFilename)
 
   end
-
-  @< Add one image @>
 end
 @}
 

@@ -97,25 +97,6 @@ function convertImages(inputPath, outputPath,
    imwrite(gray_img, outputFilename)
 
   end
-
-  # Adding another image if they are odd
-  if(length(imageFiles) % 2 != 0)
-    debug("Odd images, adding one")  
-    imageWidth, imageHeight = getImageData(string(outputPath, "/", imageFiles[1]))
-    
-    if(imageWidth % 2 != 0)
-      imageWidth -= 1
-    end
-    
-    if(imageHeight % 2 != 0)
-      imageHeight -= 1
-    end  
-    
-    imArray = zeros(Uint8, imageWidth, imageHeight)
-    img = grayim(imArray)
-    outputFilename = string(outputPath, "/", "zz.png")
-    imwrite(img, outputFilename)
-  end 
 end
 
 function getImageData(imageFile)
