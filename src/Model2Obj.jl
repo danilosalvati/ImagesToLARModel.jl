@@ -321,8 +321,8 @@ function getModelsFromFiles(arrayV, arrayFV)
 
       for ln in eachline(f_FV)
         splitted = split(ln)
-        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) +
-             offset, parse(splitted[4]) + offset])
+        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, 
+              parse(splitted[4]) + offset])
       end
       close(f_FV)
 

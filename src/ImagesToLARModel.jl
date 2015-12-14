@@ -5,10 +5,11 @@ push!(LOAD_PATH, Pkg.dir("ImagesToLARModel/src"))
 
 import JSON
 import ImagesConversion
+import PngStack2Array3dJulia
 
 using Logging
 
-export convertImagesToLARModel
+export convertImagesToLARModel, prepareData
 
 
 function loadConfiguration(configurationFile)
@@ -31,6 +32,30 @@ function loadConfiguration(configurationFile)
     end
   catch
   end
+   
+  return configuration["inputDirectory"], configuration["outputDirectory"],
+        configuration["bestImage"],
+        configuration["nx"], configuration["ny"], configuration["nz"],
+        DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
+        parallelMerge
+
+end
+
+function loadConfigurationPrepareData(configurationFile)
+  """
+  load parameters from JSON file for data preparation
+
+  configurationFile: Path of the configuration file
+  """
+
+  configuration = JSON.parse(configurationFile)
+
+
+  crop = Void
+  try
+    crop = configuration["crop"]
+  catch
+  end
   
   noise_shape = 0
   try
@@ -39,11 +64,43 @@ function loadConfiguration(configurationFile)
   end
   
   return configuration["inputDirectory"], configuration["outputDirectory"],
-        configuration["bestImage"],
-        configuration["nx"], configuration["ny"], configuration["nz"],
-        DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
-        parallelMerge, noise_shape
+        crop, noise_shape
 
+end
+
+function prepareData(configurationFile)
+  """
+  Prepare the input data converting all files into png
+  format with the desired resizing and denoising
+
+  configurationFile: Path of the configuration file
+  """
+  inputPath, outputPath, crop,
+          noise_shape = loadConfigurationPrepareData(open(configurationFile))
+
+  prepareData(inputPath, outputPath, crop, noise_shape)
+      
+end
+
+function prepareData(inputPath, outputPath,
+                       crop = Void, noise_shape = 0)
+  """
+  Prepare the input data converting all files into png
+  format with the desired resizing and denoising
+
+  inputPath: Directory containing the stack of images
+  outputPath: Directory which will contain the output
+  crop: Parameter for images resizing (they can be
+        extended or cropped)
+  noise_shape: The shape for image denoising
+  """
+  # Create output directory
+  try
+    mkpath(outputPath)
+  catch
+  end
+
+  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape)
 end
 
 function convertImagesToLARModel(configurationFile)
@@ -54,14 +111,14 @@ function convertImagesToLARModel(configurationFile)
   configurationFile: Path of the configuration file
   """
   inputDirectory, outputDirectory, bestImage, nx, ny, nz,
-      DEBUG_LEVEL, parallelMerge, noise_shape = loadConfiguration(open(configurationFile))
+      DEBUG_LEVEL, parallelMerge = loadConfiguration(open(configurationFile))
   convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
-                        nx, ny, nz, DEBUG_LEVEL, parallelMerge, noise_shape)
+                        nx, ny, nz, DEBUG_LEVEL, parallelMerge)
 end
 
 function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
                                  nx, ny, nz, DEBUG_LEVEL = INFO,
-                                 parallelMerge = false, noise_shape = 0)
+                                 parallelMerge = false)
   """
   Start conversion of a stack of images into a 3D model
 
@@ -77,7 +134,6 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
     - CRITICAL
   parallelMerge: Choose if you want to use the algorithm
   for parallel merging (experimental)
-  noise_shape: The shape for image denoising
   """
   # Create output directory
   try
@@ -87,7 +143,7 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
 
   Logging.configure(level=DEBUG_LEVEL)
   ImagesConversion.images2LARModel(nx, ny, nz, bestImage,
-          inputDirectory, outputDirectory, parallelMerge, noise_shape)
+          inputDirectory, outputDirectory, parallelMerge)
 end
 
 end

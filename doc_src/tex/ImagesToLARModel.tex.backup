@@ -182,14 +182,81 @@ After this line we can now import all modules defined here and export public fun
 @D modules import ImagesToLARModel
 @{import JSON
 import ImagesConversion
+import PngStack2Array3dJulia
 
 using Logging
 
-export convertImagesToLARModel
+export convertImagesToLARModel, prepareData
 
 @}
 
-\subsection{Input loading}\label{sec:input}
+\subsection{Input loading for data preparation}\label{sec:inputDataPreparation}
+
+Data preparation (see Section~\ref{sec:dataPreparation} takes several parameters:
+
+\begin{itemize}
+ \item inputDirectory: The path of the directory containing the stack of images
+ \item outputDirectory: The path of the directory with the output images
+ \item crop: Parameter for images resizing (they can be extended or cropped)
+ \item noise\_shape: Intensity of the denoising filter for images (0 if you want to disable it)
+\end{itemize}
+
+Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
+
+@D load JSON configuration for data preparation
+@{function loadConfigurationPrepareData(configurationFile)
+  """
+  load parameters from JSON file for data preparation
+
+  configurationFile: Path of the configuration file
+  """
+
+  configuration = JSON.parse(configurationFile)
+
+
+  crop = Void
+  try
+    crop = configuration["crop"]
+  catch
+  end
+  
+  noise_shape = 0
+  try
+    noise_shape = configuration["noise_shape"]
+  catch
+  end
+  
+  return configuration["inputDirectory"], configuration["outputDirectory"],
+        crop, noise_shape
+
+end
+@}
+
+A valid JSON file has the following structure:
+\begin{tabbing}
+\{ \= \\
+\>  ``inputDirectory": ``Path of the input directory",\\
+\>  ``outputDirectory": ``Path of the output directory",\\
+\>  ``crop": Parameter for images resizing (they can be extended or cropped)\\
+\>  ``noise\_shape": A number which indicates the intensity of the denoising \\
+filter (0 if you want to disable denoising)\\
+\}\\
+\end{tabbing}
+
+For example, we can write:
+
+\begin{tabbing}
+\{ \= \\
+\>  ``inputDirectory": ``/home/juser/IMAGES/",\\
+\>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
+\>  ``crop": [[1,800],[1,600],[1,50]],\\
+\>  ``noise\_shape": 0\\
+\}\\
+\end{tabbing}
+
+\textit{crop} and \textit{noise\_shape} are optional parameters
+
+\subsection{Input loading for images conversion}\label{sec:input}
 
 Images conversion takes several parameters:
 
@@ -200,7 +267,6 @@ Images conversion takes several parameters:
  \item nx, ny, nz: Sizes of the grid chosen for image segmentation (see section~\ref{sec:PngStack2Array3dJulia})
  \item DEBUG\_LEVEL: Debug level for Julia logger
  \item parallelMerge (experimental): Choose between sequential or parallel merge of files (see section~\ref{sec:Model2Obj})
- \item noise\_shape: Intensity of the denoising filter for images (0 if you want to disable it)
 \end{itemize}
 
 Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
@@ -226,18 +292,12 @@ Because of their number it has been realized a function for simply loading them 
     end
   catch
   end
-  
-  noise_shape = 0
-  try
-    noise_shape = configuration["noise_shape"]
-  catch
-  end
-  
+   
   return configuration["inputDirectory"], configuration["outputDirectory"],
 	configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
         DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
-        parallelMerge, noise_shape
+        parallelMerge
 
 end
 @}
@@ -253,8 +313,6 @@ A valid JSON file has the following structure:
 \>  ``nz": border z,\\
 \>  ``DEBUG\_LEVEL": julia Logging level (can be a number from 1 to 5)\\
 \>  ``parallelMerge": ``true" or ``false" \\
-\>  ``noise\_shape": A number which indicates the intensity of the denoising \\
-filter (0 if you want to disable denoising)\\
 \}\\
 \end{tabbing}
 
@@ -262,7 +320,7 @@ For example, we can write:
 
 \begin{tabbing}
 \{ \= \\
-\>  ``inputDirectory": ``/home/juser/IMAGES/"\\
+\>  ``inputDirectory": ``/home/juser/IMAGES/",\\
 \>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
 \>  ``bestImage": ``0009.tiff",\\
 \>  ``nx": 2,\\
@@ -282,9 +340,51 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
  \item CRITICAL
 \end{itemize}
 
-\textit{parallelMerge} and \textit{noise\_shape} are optional parameters
+\textit{parallelMerge} is an optional parameter
 
-\subsection{Starting conversion}\label{sec:input}
+
+\subsection{Data preparation}\label{sec:dataPreparation}
+
+@D data preparation from JSON file
+@{function prepareData(configurationFile)
+  """
+  Prepare the input data converting all files into png
+  format with the desired resizing and denoising
+
+  configurationFile: Path of the configuration file
+  """
+  inputPath, outputPath, crop,
+	  noise_shape = loadConfigurationPrepareData(open(configurationFile))
+
+  prepareData(inputPath, outputPath, crop, noise_shape)
+      
+end
+@}
+
+@D manual data preparation
+@{function prepareData(inputPath, outputPath,
+		       crop = Void, noise_shape = 0)
+  """
+  Prepare the input data converting all files into png
+  format with the desired resizing and denoising
+
+  inputPath: Directory containing the stack of images
+  outputPath: Directory which will contain the output
+  crop: Parameter for images resizing (they can be
+        extended or cropped)
+  noise_shape: The shape for image denoising
+  """
+  # Create output directory
+  try
+    mkpath(outputPath)
+  catch
+  end
+
+  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape)
+end
+@}
+
+\subsection{Starting conversion}\label{sec:conversion}
 
 As we have already said, this module has the only responsibility to collect data input and starts other modules. These are the functions that start the process and the only exposed to the application users:
 
@@ -297,16 +397,16 @@ As we have already said, this module has the only responsibility to collect data
   configurationFile: Path of the configuration file
   """
   inputDirectory, outputDirectory, bestImage, nx, ny, nz,
-      DEBUG_LEVEL, parallelMerge, noise_shape = loadConfiguration(open(configurationFile))
+      DEBUG_LEVEL, parallelMerge = loadConfiguration(open(configurationFile))
   convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
-			nx, ny, nz, DEBUG_LEVEL, parallelMerge, noise_shape)
+			nx, ny, nz, DEBUG_LEVEL, parallelMerge)
 end
 @}
 
 @D Start manual conversion
 @{function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
                                  nx, ny, nz, DEBUG_LEVEL = INFO,
-                                 parallelMerge = false, noise_shape = 0)
+                                 parallelMerge = false)
   """
   Start conversion of a stack of images into a 3D model
 
@@ -322,7 +422,6 @@ end
     - CRITICAL
   parallelMerge: Choose if you want to use the algorithm
   for parallel merging (experimental)
-  noise_shape: The shape for image denoising
   """
   # Create output directory
   try
@@ -332,7 +431,7 @@ end
 
   Logging.configure(level=DEBUG_LEVEL)
   ImagesConversion.images2LARModel(nx, ny, nz, bestImage,
-	  inputDirectory, outputDirectory, parallelMerge, noise_shape)
+	  inputDirectory, outputDirectory, parallelMerge)
 end
 @}
 
@@ -368,25 +467,13 @@ Conversion needs the following parameters:
 \begin{itemize}
  \item inputPath: path of the folder containing the original images
  \item outputPath: path where we will save png images
- \item bestImage: name of the image chosen for centroids computing (see section~\ref{sec:centroids})
+ \item crop: parameters for images resizing (they can be extended or cropped)
 \end{itemize}
 
-After conversion \textit{outputPath} will contain our png images and the function will return the new name chosen for the best image.\\
-
-Now we can examine single parts of conversion process. First of all we need to specify a new name for images, keeping the right order between them; so we need to define a prefix based on number of images:
-
-@D Define string prefix
-@{imageFiles = readdir(inputPath)
-numberOfImages = length(imageFiles)
-outputPrefix = ""
-for i in 1: length(string(numberOfImages)) - 1
-  outputPrefix = string(outputPrefix,"0")
-end @}
-    
-Next we need to open the single image doing the following operations:
+Now we can examine single parts of conversion process. First of all we need to open the single image doing the following operations:
 \begin{enumerate}
  \item Open images using \texttt{Images} library (which relies on \texttt{ImageMagick}) and save them in greyscale png format 
- \item if one or both dimensions of the image are odd we need to remove one row (or column) of pixels to make it even. This will be more clear when we will introduce the grid for parallel computation (see section~\ref{sec:ImagesConversion})
+ \item resize the images according to the \textit{crop} parameter
 \end{enumerate}
 
 @D Greyscale conversion
@@ -395,42 +482,19 @@ gray_img = convert(Image{ColorTypes.Gray}, rgb_img) @}
     
 As we can see, we first need to convert image to RGB and then reconverting to greyscale. Without the RGB conversion these rows will return a stackoverflow error due to the presence of alpha channel
 
-
 @D Image resizing
-@{# resizing images if they do not have even dimensions
-dim = size(img)
-if(dim[1] % 2 != 0)
-  debug("Image has odd x; resizing")
-  xrange = 1: dim[1] - 1
-else
-  xrange = 1: dim[1]
-end
-
-if(dim[2] % 2 != 0)
-  debug("Image has odd y; resizing")
-  yrange = 1: dim[2] - 1
-else
-  yrange = 1: dim[2]
-end
-
-img = subim(gray_img, xrange, yrange) @}
+@{if(crop!= Void)
+  gray_img = resizeImage(gray_img, crop)
+end @}
     
-
-Next we just have to search for the best image and add one image if they are odd (for same reasons we need even image dimensions)
-
-@D Search for best image
-@{# Searching the best image
-if(imageFile == bestImage)
-  newBestImage = string(outputPrefix[length(string(imageNumber)):end],
-			    imageNumber,".png")
-end
-imageNumber += 1 @}
+The code for image resizing will be better explained in section~\ref{sec:imageResize}.
+Next we just have to add one image if they are odd (for same reasons we need even image dimensions)
     
 @D Add one image
 @{# Adding another image if they are odd
-if(numberOfImages % 2 != 0)
+if(length(imageFiles) % 2 != 0)
   debug("Odd images, adding one")  
-  imageWidth, imageHeight = getImageData(string(outputPath, "/", newBestImage))
+  imageWidth, imageHeight = getImageData(string(outputPath, "/", imageFiles[1]))
   
   if(imageWidth % 2 != 0)
     imageWidth -= 1
@@ -442,20 +506,19 @@ if(numberOfImages % 2 != 0)
   
   imArray = zeros(Uint8, imageWidth, imageHeight)
   img = grayim(imArray)
-  outputFilename = string(outputPath, "/", 
-		      outputPrefix[length(string(imageNumber)):end], imageNumber,".png")
+  outputFilename = string(outputPath, "/", "zz.png")
   imwrite(img, outputFilename)
 end @}
 
 
-Fianlly we have to reduce noise on the image. The better choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
+Finally we have to reduce noise on the image. The best choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
 
 @D Reduce noise
 @{# Denoising
 if noise_shape_detect != 0
-  imArray = raw(img)
+  imArray = raw(gray_img)
   imArray = ndimage.median_filter(imArray, noise_shape_detect)
-  img = grayim(imArray)
+  gray_img = grayim(imArray)
 end @}
 
 Where imArray is an array containing all raw data from images
@@ -463,46 +526,105 @@ Where imArray is an array containing all raw data from images
 Finally this is the code for the entire function:
 
 @D Convert to png
-@{function convertImages(inputPath, outputPath, bestImage, noise_shape_detect = 0)
+@{function convertImages(inputPath, outputPath,
+                       crop = Void, noise_shape_detect = 0)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
-  If images have one of two odd dimensions, they will be resized
+  Images will be resized according with the crop parameter
   and if folder contains an odd number of images another one will be
   added
 
   inputPath: Directory containing input images
   outputPath: Temporary directory containing png images
-  bestImage: Image chosen for centroids computation
+  crop: Parameter for images resizing (they can be
+        extended or cropped)
   noise_shape_detect: Shape for the denoising filter
-
-  Returns the new name for the best image
   """
 
-  @< Define string prefix @>
+  imageFiles = readdir(inputPath)
   
-  newBestImage = ""
-  imageNumber = 0
+  @< Resize images on z-axis @>
+  
   for imageFile in imageFiles
     img = imread(string(inputPath, imageFile))
     @< Greyscale conversion @>
     @< Image resizing @>
-    outputFilename = string(outputPath, outputPrefix[length(string(imageNumber)):end],
-			      imageNumber,".png")
-    imwrite(img, outputFilename)
 
-    @< Search for best image @>
     @< Reduce noise @>
     
-    imwrite(img, outputFilename)
+   outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")
+   imwrite(gray_img, outputFilename)
 
   end
 
   @< Add one image @>
-
-  return newBestImage
 end
 @}
+
+\subsubsection{Image resizing}\label{sec:imageResize}
+
+Now we will see in detail how to resize images on x and y axis. The most important parameter is \textit{crop}, which is a list of numbers that contains the desired dimensions for the stack of images. Given the following list $[[xcropStart, xcropEnd],[ycropStart, ycropEnd],[zcropStart, zcropEnd]]$ we can have different cases based on the list values, as we can see in Figure~\ref{fig:resizeCases}:
+
+\begin{figure}[htbp] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=8.5cm]{images/resizeCases.png} \hfill
+   \caption{Some interesting resize cases. (a) The original image (b) Extension on the x dimension (c) Extension on the y dimension (d) Extension on both dimensions (e) Crop of both x and y (f) Crop of x and extension of y}
+   \label{fig:resizeCases}
+\end{figure}
+
+So with the same parameter we can both resize or extend images. In particular, when we have to extend them, we have to get the raw data and concatenate a zeroed array to it. On the other hand, for image cropping we can use the \texttt{subim} function from the \texttt{Images} package.
+
+@D image resizing
+@{function resizeImage(image, crop)
+  """
+  Utility function for images resize
+  
+  image: the input image
+  crop: a list containing the crop parameters 
+        for the three dimensions 
+  
+  returns the resized image
+  """
+  dim = size(image)
+  if(crop[1][2] > dim[1])
+    # Extending the images on the x axis
+    imArray = raw(image)
+    zeroArray = zeros(Uint8, dim[2])
+    for i in (1 : (crop[1][2] - dim[1]))
+      imArray = vcat(imArray, transpose(zeroArray))
+    end
+    image = grayim(imArray)
+  end
+  
+  if(crop[2][2] > dim[2])
+    # Extending the images on the y axis
+    imArray = raw(image)
+    zeroArray = zeros(Uint8, size(image)[1])
+    for i in (1: (crop[2][2] - dim[2]))
+      imArray = hcat(imArray, zeroArray)
+    end
+    image = grayim(imArray)
+  end
+  return subim(image, crop[1][1]:crop[1][2], crop[2][1]:crop[2][2])
+end @}
+
+@D Resize images on z-axis
+@{#Resizing on the z axis
+if(crop!= Void)
+  numberOfImages = length(imageFiles)
+  if(crop[3][2] > numberOfImages)
+    imageWidth = crop[1][2] - crop[1][1] + 1
+    imageHeight = crop[2][2] - crop[2][1] + 1
+    for i in 1 : crop[3][2] - numberOfImages
+      imArray = zeros(Uint8, imageWidth, imageHeight)
+      img = grayim(imArray)
+      outputFilename = string(outputPath, "/", imageFiles[end][1:rsearch(imageFiles[end], ".")[1]],
+			      "-added-", i ,".png")
+      imwrite(img, outputFilename)
+    end 
+  end
+end @}
 
 \subsection{Getting data from a png}\label{sec:getData}
 
@@ -669,7 +791,7 @@ image3d[page] = tmp @}
    \includegraphics[width=0.30\linewidth]{images/denoised.png} \hfill
    \includegraphics[width=0.30\linewidth]{images/quantized.png} \hfill
    \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
-   \label{fig:rawImage}
+   \label{fig:imageTransformation}
 \end{figure}
 
 We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This could happen when the images is completely empty or it has only colored pixels. So, we need to check this cases and fill the assignments array \texttt{qnt} with the right values based on the \texttt{centroids} parameter.
@@ -734,7 +856,7 @@ This algorithm is very simple, however we does not considered problems concernin
    \includegraphics[width=0.45\linewidth]{images/imageGrid.png} \hfill
    \includegraphics[width=0.45\linewidth]{images/imageGrid3d.png}
    \caption{The grid used for parallel computation (a) 2D grid on a single image (b) 3D grid for the stack of images}
-   \label{fig:rawImage}
+   \label{fig:grid}
 \end{figure}
 
 So, instead of converting the entire model with a unique process, we can subdivide the input among a lot of processes, where every process will execute the conversion process on a small number of \textbf{blocks} according to the grid subdivision.\\
@@ -770,14 +892,13 @@ export images2LARModel
 @}
 
 \subsection{Data preparation}\label{sec:ImagesConversionDataPreparation}
-As a first thing, we will see how to prepare our data for conversion process. Firstly we need to convert input images to greyscale png; so we need to create a temporary directory for saving them.\\
-Later, we need to compute the LAR boundary operator for finding boundaries of our cells (for the generation see section~\ref{sec:GenerateBorderMatrix}) getting width and height from our images.\\
-Finally we can start conversion with all these parameters calling \texttt{startImageConversion} function, which will be explained in next subsection.
+As a first thing, we will see how to prepare our data for conversion process. Firstly we need to compute the LAR boundary operator for finding boundaries of our cells (for the generation see section~\ref{sec:GenerateBorderMatrix}) getting width and height from our images.\\
+Later we can start conversion with all these parameters calling \texttt{startImageConversion} function, which will be explained in next subsection.
 
 @D main function for ImagesConversion
 @{function images2LARModel(nx, ny, nz, bestImage,
 			inputDirectory, outputDirectory,
-			parallelMerge, noise_shape_detect = 0)
+			parallelMerge)
   """
   Convert a stack of images into a 3d model
   """
@@ -787,20 +908,9 @@ Finally we can start conversion with all these parameters calling \texttt{startI
   numberOfClusters = 2 # Number of clusters for
                        # images segmentation
 
-  info("Moving images into temp directory")
-  try
-    mkdir(string(outputDirectory, "TEMP"))
-  catch
-  end
-
-  tempDirectory = string(outputDirectory,"TEMP/")
-
-  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory,
-						     bestImage, noise_shape_detect)
-
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
-				      string(tempDirectory,newBestImage))
-  imageDepth = length(readdir(tempDirectory))
+				      string(inputDirectory, bestImage))
+  imageDepth = length(readdir(inputDirectory))
 
   # Computing border matrix
   info("Computing border matrix")
@@ -813,7 +923,7 @@ Finally we can start conversion with all these parameters calling \texttt{startI
 
   # Starting images conversion and border computation
   info("Starting images conversion")
-  startImageConversion(tempDirectory, newBestImage, outputDirectory, borderFilename,
+  startImageConversion(inputDirectory, bestImage, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
                        numberOfClusters, parallelMerge)
@@ -2887,6 +2997,46 @@ end @}
 
 \subsection{Load models from files}\label{sec:loadObj}
 
+Another important functionality for our library, consists in model loading from our faces and vertices files. This is useful when passing from a pipeline step to another one. For simplicity, we offer a unique function that loads an array of vertices files (with the corresponding array of faces files), merge the values into a unique model and returns it.
+
+@D Load models from file
+@{function getModelsFromFiles(arrayV, arrayFV)
+  """
+  Get a LAR models for two arrays of vertices
+  and faces files
+
+  arrayV: Array containing all vertices files
+  arrayFV: Array containing all faces files
+  """
+
+  V = Array(Array{Float64}, 0)
+  FV = Array(Array{Int}, 0)
+  offset = 0
+
+  for i in 1:length(arrayV)
+    if isfile(arrayFV[i])
+      f_FV = open(arrayFV[i])
+
+      for ln in eachline(f_FV)
+        splitted = split(ln)
+        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, 
+              parse(splitted[4]) + offset])
+      end
+      close(f_FV)
+
+      f_V = open(arrayV[i])
+      for ln in eachline(f_V)
+        splitted = split(ln)
+        push!(V, [parse(splitted[2]), parse(splitted[3]),
+             parse(splitted[4])])
+        offset += 1
+      end
+      close(f_V)
+    end
+  end
+  return V, FV
+end @}
+
 %===============================================================================
 \section{Exporting the library}
 %===============================================================================
@@ -2899,6 +3049,9 @@ end @}
 
 @< modules import ImagesToLARModel @>
 @< load JSON configuration @>
+@< load JSON configuration for data preparation @>
+@< data preparation from JSON file @>
+@< manual data preparation @>
 @< Start conversion from JSON file @>
 @< Start manual conversion @>
 end
@@ -3011,40 +3164,7 @@ export writeToObj, mergeObj, mergeObjParallel
 
 @< merge obj parallel @>
 
-function getModelsFromFiles(arrayV, arrayFV)
-  """
-  Get a LAR models for two arrays of vertices
-  and faces files
-
-  arrayV: Array containing all vertices files
-  arrayFV: Array containing all faces files
-  """
-
-  V = Array(Array{Float64}, 0)
-  FV = Array(Array{Int}, 0)
-  offset = 0
-
-  for i in 1:length(arrayV)
-    if isfile(arrayFV[i])
-      f_FV = open(arrayFV[i])
-
-      for ln in eachline(f_FV)
-        splitted = split(ln)
-        push!(FV, [parse(splitted[2]) + offset, parse(splitted[3]) + offset, parse(splitted[4]) + offset])
-      end
-      close(f_FV)
-
-      f_V = open(arrayV[i])
-      for ln in eachline(f_V)
-        splitted = split(ln)
-        push!(V, [parse(splitted[2]), parse(splitted[3]), parse(splitted[4])])
-        offset += 1
-      end
-      close(f_V)
-    end
-  end
-  return V, FV
-end
+@< Load models from file @>
 end
 @}
 
@@ -3054,6 +3174,8 @@ end
 @{module PngStack2Array3dJulia
 
 @< modules import PngStack2Array3dJulia @>
+@<image resizing @>
+
 @< Convert to png @>
 @< Get image data @>
 @< Centroid computation @>

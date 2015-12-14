@@ -14,7 +14,7 @@ export images2LARModel
 
 function images2LARModel(nx, ny, nz, bestImage,
                         inputDirectory, outputDirectory,
-                        parallelMerge, noise_shape_detect = 0)
+                        parallelMerge)
   """
   Convert a stack of images into a 3d model
   """
@@ -24,20 +24,9 @@ function images2LARModel(nx, ny, nz, bestImage,
   numberOfClusters = 2 # Number of clusters for
                        # images segmentation
 
-  info("Moving images into temp directory")
-  try
-    mkdir(string(outputDirectory, "TEMP"))
-  catch
-  end
-
-  tempDirectory = string(outputDirectory,"TEMP/")
-
-  newBestImage = PngStack2Array3dJulia.convertImages(inputDirectory, tempDirectory,
-                                                     bestImage, noise_shape_detect)
-
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
-                                      string(tempDirectory,newBestImage))
-  imageDepth = length(readdir(tempDirectory))
+                                      string(inputDirectory, bestImage))
+  imageDepth = length(readdir(inputDirectory))
 
   # Computing border matrix
   info("Computing border matrix")
@@ -50,7 +39,7 @@ function images2LARModel(nx, ny, nz, bestImage,
 
   # Starting images conversion and border computation
   info("Starting images conversion")
-  startImageConversion(tempDirectory, newBestImage, outputDirectory, borderFilename,
+  startImageConversion(inputDirectory, bestImage, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
                        numberOfClusters, parallelMerge)
