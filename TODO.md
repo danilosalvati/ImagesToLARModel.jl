@@ -2,15 +2,10 @@
 
 ## ImagesToLARModel
 
-- Make images conversion optional 
 - Add interfaces for other file types
-- With separation of images conversion, it could be useful to add function for resizing and extending images
 - Investigate on best values for boundary operator size
 
 ## PngStack2Array3dJulia
-
-- Add crop on z axis
-- Resolve this for Julia 0.4 WARNING: imwrite(img,filename; kwargs...) is deprecated, use save(filename,img; kwargs...) instead.
 
 ## LARUtils
 
