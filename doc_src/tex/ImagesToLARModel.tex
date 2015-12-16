@@ -927,7 +927,7 @@ Every single step of the pipeline, is executed in parallel for every block of th
  \item \textbf{inputDirectory}: Directory which contains input files for the process function
  \item \textbf{imageHeight, imageWidth, imageDepth}: Sizes of the stack of images
  \item \textbf{imageDx, imageDy, imageDz}: Sizes of the grid
- \item \textbf{processFunction}: Function that contains instructions for execution of a single step of the pipeline for a single block
+ \item \textbf{processFunction}: Function that contains instructions for execution of a single step of the pipeline for every block
  \item \textbf{outputDirectory}: Directory which will contains the output
  \item \textbf{centroids}: Centroids from the best image
  \item \textbf{boundaryMat}: Boundary operator for the chosen grid
@@ -948,8 +948,7 @@ This function will iterate on all blocks of the image grid executing the process
   inputDirectory: Directory which contains input files for the process function
   imageHeight, imageWidth, imageDepth: Images sizes
   imageDx, imageDy, imageDz: Sizes of cells grid
-  processFunction: Function that will be executed on a separate task on
-  the entire z-Block
+  processFunction: Function that will be executed on a separate task
   outputDirectory: Directory which will contains the output
   centroidsCalc: Centroids from the best image
   boundaryMat: Boundary operator for the chosen grid
@@ -962,13 +961,18 @@ This function will iterate on all blocks of the image grid executing the process
   for zBlock in 0:(imageDepth / imageDz - 1)
     startImage = endImage
     endImage = startImage + imageDz
-    task = @@spawn processFunction(inputDirectory,
-				   startImage, endImage,
-                                   imageDx, imageDy,
-                                   imageWidth, imageHeight,
-                                   outputDirectory,
-                                   centroidsCalc, boundaryMat)                                  
-    push!(tasks, task)
+    for xBlock in 0:(imageWidth / imageDx - 1)
+      for yBlock in 0:(imageHeight / imageDy - 1)
+        task = @@spawn processFunction(inputDirectory,
+                                      xBlock, yBlock,
+                                      startImage, endImage,
+                                      imageDx, imageDy,
+                                      imageWidth, imageHeight,
+                                      outputDirectory,
+                                      centroidsCalc, boundaryMat)
+        push!(tasks, task)
+      end
+    end
   end
 
   # Waiting for tasks
@@ -978,7 +982,7 @@ This function will iterate on all blocks of the image grid executing the process
 end @}
 
 First of all we need to iterate on the grid finding the zBlock coordinate; we saw earlier that the \textit{imageDz} parameter must be a divisor of the image depth, so we will have exactly \textit{imageDepth/imageDz} blocks on the z coordinate. Moreover, at every zBlock correspond a startImage and an endImage where $endImage - startImage = imageDz$.\\
-Now we can simply parallelize the conversion process spawning a new process for every zBlock, so we open at most \textit{imageDz} images for process. Finally, we have to wait for tasks completion.\\
+Now we can iterate on the xBlock and yBlock, parallelizing the conversion process spawning a new process for every block. Finally, we have to wait for tasks completion.\\
 
 Now we can see the entire pipeline for images conversion.\\
 
@@ -1047,8 +1051,7 @@ Now we will focus on the first step of our pipeline conversion: \textit{images c
 First thing to do is read an image calling the \texttt{PngStack2Array3dJulia}, after that is necessary to sort the centroid array for choosing correct background and foreground pixels.
 
 @D image read and centroids sort
-@{info("Transforming png data into 3d array")
-theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
+@{theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
 						startImage, endImage, centroids)
 
 centroidsSorted = sort(vec(reshape(centroids, 1, 2)))
@@ -1233,18 +1236,54 @@ end @}
 
 This is the code for starting this pipeline step:
 
+@D pixelsToVoxels function
+@{function pixelsToVoxels(sliceDirectory,
+                        imageHeight, imageWidth, imageDepth,
+                        imageDx, imageDy, imageDz,
+                        outputDirectory,
+                        centroidsCalc, boundaryMat)
+  """
+  Function for conversion of pixels into voxels. It is different
+  from iterateOnBlocks because it needs a different distribution
+  of tasks between processes
+  """
+  beginImageStack = 0
+  endImage = beginImageStack
+
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 0:(imageDepth / imageDz - 1)
+    startImage = endImage
+    endImage = startImage + imageDz
+    task = @@spawn imageConversionProcess(sliceDirectory,
+                                         startImage, endImage,
+                                         imageDx, imageDy,
+                                         imageWidth, imageHeight,
+                                         outputDirectory,
+                                         centroidsCalc, boundaryMat)
+    push!(tasks, task)
+  end
+
+  # Waiting for tasks
+  for task in tasks
+    wait(task)
+  end
+end @}
+
 @D pixels to voxels conversion step
-@{@@time iterateOnBlocks(sliceDirectory,
-                  imageHeight, imageWidth, imageDepth,
-                  imageDx, imageDy, imageDz,
-                  imageConversionProcess, outputDirectory,
-                  centroidsCalc, boundaryMat) @}
+@{@@time pixelsToVoxels(sliceDirectory,
+                    imageHeight, imageWidth, imageDepth,
+                    imageDx, imageDy, imageDz,
+                    outputDirectory,
+                    centroidsCalc, boundaryMat) @}
+                    
+How we can see, for this step we do not use the \texttt{iterateOnBlocks} function, in fact pixel to voxel conversion is more efficient if we parallelize tasks assigning to each process an entire z-Block.
                   
 \subsubsection{Boundaries merge step}\label{sec:boundariesStep}
 Next step of our pipeline consists in \textit{boundaries merge}. In fact, we have already seen that for every non-empty cell we create files for the inner parts and for the boundaries of the block. So if we want a final model without boundaries between internal blocks, we need to merge them removing duplicated faces on both sides (see Section~\ref{sec:removeDoubleFacesAndVerticesFromBoundaries} for a better explanation of this step). The following is the \texttt{processFunction}:
 
 @D boundary merge process function
 @{function mergeBoundariesProcess(modelDirectory,
+				  xBlock, yBlock,
 				  startImage, endImage,
 				  imageDx, imageDy,
 				  imageWidth, imageHeight,
@@ -1260,31 +1299,27 @@ Next step of our pipeline consists in \textit{boundaries merge}. In fact, we hav
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
   """
-  for xBlock in 0:(imageWidth / imageDx - 1)
-    for yBlock in 0:(imageHeight / imageDy - 1)
 
-      # Merging right Boundary
-      firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock,
-			"_", startImage, "_", endImage)
-      secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1,
-			"_", startImage, "_", endImage)
-      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
+  # Merging right Boundary
+  firstPath = string(modelDirectory, "/right_output_", xBlock, "-", yBlock,
+		    "_", startImage, "_", endImage)
+  secondPath = string(modelDirectory, "/left_output_", xBlock, "-", yBlock + 1,
+		    "_", startImage, "_", endImage)
+  mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 
-      # Merging top boundary
-      firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock,
-			 "_", startImage, "_", endImage)
-      secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock,
-			 "_", endImage, "_", endImage + (endImage - startImage))
-      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
+  # Merging top boundary
+  firstPath = string(modelDirectory, "/top_output_", xBlock, "-", yBlock,
+		      "_", startImage, "_", endImage)
+  secondPath = string(modelDirectory, "/bottom_output_", xBlock, "-", yBlock,
+		      "_", endImage, "_", endImage + (endImage - startImage))
+  mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 
-      # Merging front boundary
-      firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock,
-			"_", startImage, "_", endImage)
-      secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock,
-			"_", startImage, "_", endImage)
-      mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
-    end
-  end
+  # Merging front boundary
+  firstPath = string(modelDirectory, "/front_output_", xBlock, "-", yBlock,
+		    "_", startImage, "_", endImage)
+  secondPath = string(modelDirectory, "/back_output_", xBlock + 1, "-", yBlock,
+		    "_", startImage, "_", endImage)
+  mergeBoundariesAndRemoveDuplicates(firstPath, secondPath)
 end @}
 
 For every block we do the following merges:
@@ -1348,6 +1383,7 @@ At this step of the computation, we have files with the inner parts of a single 
 
 @D Block merge process function
 @{function mergeBlocksProcess(modelDirectory,
+			      xBlock, yBlock,
 			      startImage, endImage,
 			      imageDx, imageDy,
 			      imageWidth, imageHeight,
@@ -1363,43 +1399,38 @@ At this step of the computation, we have files with the inner parts of a single 
   imageDx, imageDy: x and y sizes of the grid
   imageWidth, imageHeight: Width and Height of the image
   """
-  for xBlock in 0:(imageWidth / imageDx - 1)
-    for yBlock in 0:(imageHeight / imageDy - 1)
+  blockCoordsV = string(xBlock, "-", yBlock, "_", startImage,
+			"_", endImage, "_vtx.stl")
+  blockCoordsFV = string(xBlock, "-", yBlock, "_", startImage,
+			"_", endImage, "_faces.stl")
 
-      blockCoordsV = string(xBlock, "-", yBlock, "_", startImage,
-			    "_", endImage, "_vtx.stl")
-      blockCoordsFV = string(xBlock, "-", yBlock, "_", startImage,
-			    "_", endImage, "_faces.stl")
+  arrayV = [string(modelDirectory, "/left_output_", blockCoordsV),
+	    string(modelDirectory, "/right_output_", blockCoordsV),
+	    string(modelDirectory, "/top_output_", blockCoordsV),
+	    string(modelDirectory, "/bottom_output_", blockCoordsV),
+	    string(modelDirectory, "/front_output_", blockCoordsV),
+	    string(modelDirectory, "/back_output_", blockCoordsV),
+	    string(modelDirectory, "/model_output_", blockCoordsV)]
 
-      arrayV = [string(modelDirectory, "/left_output_", blockCoordsV),
-                string(modelDirectory, "/right_output_", blockCoordsV),
-                string(modelDirectory, "/top_output_", blockCoordsV),
-                string(modelDirectory, "/bottom_output_", blockCoordsV),
-                string(modelDirectory, "/front_output_", blockCoordsV),
-                string(modelDirectory, "/back_output_", blockCoordsV),
-                string(modelDirectory, "/model_output_", blockCoordsV)]
+  arrayFV = [string(modelDirectory, "/left_output_", blockCoordsFV),
+	      string(modelDirectory, "/right_output_", blockCoordsFV),
+	      string(modelDirectory, "/top_output_", blockCoordsFV),
+	      string(modelDirectory, "/bottom_output_", blockCoordsFV),
+	      string(modelDirectory, "/front_output_", blockCoordsFV),
+	      string(modelDirectory, "/back_output_", blockCoordsFV),
+	      string(modelDirectory, "/model_output_", blockCoordsFV)]
 
-      arrayFV = [string(modelDirectory, "/left_output_", blockCoordsFV),
-                 string(modelDirectory, "/right_output_", blockCoordsFV),
-                 string(modelDirectory, "/top_output_", blockCoordsFV),
-                 string(modelDirectory, "/bottom_output_", blockCoordsFV),
-                 string(modelDirectory, "/front_output_", blockCoordsFV),
-                 string(modelDirectory, "/back_output_", blockCoordsFV),
-                 string(modelDirectory, "/model_output_", blockCoordsFV)]
-
-      V, FV = Model2Obj.getModelsFromFiles(arrayV, arrayFV)
-      V, FV = LARUtils.removeDoubleVerticesAndFaces(V, FV, 0)
-      for i in 1:length(arrayV)
-        if(isfile(arrayV[i]))
-          rm(arrayV[i])
-          rm(arrayFV[i])
-        end
-      end
-
-      Model2Obj.writeToObj(V, FV, string(modelDirectory, "/model_output_",
-                               xBlock, "-", yBlock, "_", startImage, "_", endImage))
+  V, FV = Model2Obj.getModelsFromFiles(arrayV, arrayFV)
+  V, FV = LARUtils.removeDoubleVerticesAndFaces(V, FV, 0)
+  for i in 1:length(arrayV)
+    if(isfile(arrayV[i]))
+      rm(arrayV[i])
+      rm(arrayFV[i])
     end
   end
+
+  Model2Obj.writeToObj(V, FV, string(modelDirectory, "/model_output_",
+			    xBlock, "-", yBlock, "_", startImage, "_", endImage))
 end @}
 
 For a better explanation of the \texttt{LARUtils} function that remove duplicated vertices, you can see Section~\ref{sec:doubleverticesandfacesremoval}
@@ -1419,11 +1450,12 @@ Now we have obtained models without internal boundaries between blocks and witho
 
 @D Smooth block process function
 @{function smoothBlocksProcess(modelDirectory,
-			      startImage, endImage,
-			      imageDx, imageDy,
-			      imageWidth, imageHeight,
-			      outputDirectory = None,
-			      centroidsCalc = None, boundaryMat = None)
+                             xBlock, yBlock,
+                             startImage, endImage,
+                             imageDx, imageDy,
+                             imageWidth, imageHeight,
+                             outputDirectory = None,
+                             centroidsCalc = None, boundaryMat = None)
   """
   Smoothes a block in a single process
 
@@ -1434,61 +1466,56 @@ Now we have obtained models without internal boundaries between blocks and witho
   imageWidth, imageHeight: sizes of the images
   """
 
-  for xBlock in 0:(imageWidth / imageDx - 1)
-    for yBlock in 0:(imageHeight / imageDy - 1)
+  # Loading the current block model
+  blockFileV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
+                      "_", startImage, "_", endImage, "_vtx.stl")
+  blockFileFV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
+                       "_", startImage, "_", endImage, "_faces.stl")
 
-      # Loading the current block model
-      blockFileV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
-			  "_", startImage, "_", endImage, "_vtx.stl")
-      blockFileFV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
-			  "_", startImage, "_", endImage, "_faces.stl")
+  if isfile(blockFileV)
+    # Loading only model of the current block
+    blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
+    blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV,
+                                                                      blockModelFV, 0)
 
-      if isfile(blockFileV)
-        # Loading only model of the current block
-        blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
-        blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV,
-						blockModelFV, 0)
-
-        # Loading a unique model from this block and its adjacents
-        modelsFiles = Array(String, 0)
-        for x in xBlock - 1:xBlock + 1
-          for y in yBlock - 1:yBlock + 1
-            for z in range(startImage - (endImage - startImage),(endImage - startImage), 3)
-              push!(modelsFiles, string(modelDirectory, "/model_output_",
-					x, "-", y, "_", z, "_", z + (endImage - startImage)))
-            end
-          end
-        end
-
-        modelsFilesV = map((s) -> string(s, "_vtx.stl"), modelsFiles)
-        modelsFilesFV = map((s) -> string(s, "_faces.stl"), modelsFiles)
-
-        modelV, modelFV = Model2Obj.getModelsFromFiles(modelsFilesV, modelsFilesFV)
-        modelV, modelFV = LARUtils.removeDoubleVerticesAndFaces(modelV, modelFV, 0)
-
-        # Now I have to save indices of vertices of the current block model
-        blockVerticesIndices = Array(Int, 0)
-        for i in 1:length(blockModelV)
-          for j in 1:length(modelV)
-            if blockModelV[i] == modelV[j]
-              push!(blockVerticesIndices, j)
-            end
-          end
-
-          # Now I can apply smoothing on this model
-          V_sm, FV_sm = Smoother.smoothModel(modelV, modelFV)
-
-          # Now I have to get only block vertices and save them on the new model
-          V_final = Array(Array{Float64}, 0)
-          for i in blockVerticesIndices
-            push!(V_final, V_sm[i])
-          end
-          outputFilename = string(modelDirectory, "/smoothed_output_", xBlock, "-",
-				  yBlock, "_", startImage, "_", endImage)
-          Model2Obj.writeToObj(V_final, blockModelFV, outputFilename)
+    # Loading a unique model from this block and its adjacents
+    modelsFiles = Array(String, 0)
+    for x in xBlock - 1:xBlock + 1
+      for y in yBlock - 1:yBlock + 1
+        for z in range(startImage - (endImage - startImage),(endImage - startImage), 3)
+          push!(modelsFiles, string(modelDirectory, "/model_output_",
+                                    x, "-", y, "_", z, "_", z + (endImage - startImage)))
         end
       end
     end
+
+    modelsFilesV = map((s) -> string(s, "_vtx.stl"), modelsFiles)
+    modelsFilesFV = map((s) -> string(s, "_faces.stl"), modelsFiles)
+
+    modelV, modelFV = Model2Obj.getModelsFromFiles(modelsFilesV, modelsFilesFV)
+    modelV, modelFV = LARUtils.removeDoubleVerticesAndFaces(modelV, modelFV, 0)
+
+    # Now I have to save indices of vertices of the current block model
+    blockVerticesIndices = Array(Int, 0)
+    for i in 1:length(blockModelV)
+      for j in 1:length(modelV)
+        if blockModelV[i] == modelV[j]
+          push!(blockVerticesIndices, j)
+        end
+      end
+    end
+
+    # Now I can apply smoothing on this model
+    V_sm, FV_sm = Smoother.smoothModel(modelV, modelFV)
+
+    # Now I have to get only block vertices and save them on the new model
+    V_final = Array(Array{Float64}, 0)
+    for i in blockVerticesIndices
+      push!(V_final, V_sm[i])
+    end
+    outputFilename = string(modelDirectory, "/smoothed_output_", xBlock, "-",
+                            yBlock, "_", startImage, "_", endImage)
+    Model2Obj.writeToObj(V_final, blockModelFV, outputFilename)
   end
 end @}
 
@@ -3046,6 +3073,8 @@ end
 @< main function for ImagesConversion @>
 
 @< parallel block iteration @>
+
+@< pixelsToVoxels function @>
 
 @< start conversion of images @>
 
