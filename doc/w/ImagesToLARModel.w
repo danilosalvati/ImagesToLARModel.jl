@@ -1051,8 +1051,7 @@ Now we will focus on the first step of our pipeline conversion: \textit{images c
 First thing to do is read an image calling the \texttt{PngStack2Array3dJulia}, after that is necessary to sort the centroid array for choosing correct background and foreground pixels.
 
 @D image read and centroids sort
-@{info("Transforming png data into 3d array")
-theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
+@{theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
 						startImage, endImage, centroids)
 
 centroidsSorted = sort(vec(reshape(centroids, 1, 2)))
@@ -1274,8 +1273,10 @@ end @}
 @{@@time pixelsToVoxels(sliceDirectory,
                     imageHeight, imageWidth, imageDepth,
                     imageDx, imageDy, imageDz,
-                    imageConversionProcess, outputDirectory,
+                    outputDirectory,
                     centroidsCalc, boundaryMat) @}
+                    
+How we can see, for this step we do not use the \texttt{iterateOnBlocks} function, in fact pixel to voxel conversion is more efficient if we parallelize tasks assigning to each process an entire z-Block.
                   
 \subsubsection{Boundaries merge step}\label{sec:boundariesStep}
 Next step of our pipeline consists in \textit{boundaries merge}. In fact, we have already seen that for every non-empty cell we create files for the inner parts and for the boundaries of the block. So if we want a final model without boundaries between internal blocks, we need to merge them removing duplicated faces on both sides (see Section~\ref{sec:removeDoubleFacesAndVerticesFromBoundaries} for a better explanation of this step). The following is the \texttt{processFunction}:
@@ -1449,12 +1450,12 @@ Now we have obtained models without internal boundaries between blocks and witho
 
 @D Smooth block process function
 @{function smoothBlocksProcess(modelDirectory,
-			      xBlock, yBlock,
-			      startImage, endImage,
-			      imageDx, imageDy,
-			      imageWidth, imageHeight,
-			      outputDirectory = None,
-			      centroidsCalc = None, boundaryMat = None)
+                             xBlock, yBlock,
+                             startImage, endImage,
+                             imageDx, imageDy,
+                             imageWidth, imageHeight,
+                             outputDirectory = None,
+                             centroidsCalc = None, boundaryMat = None)
   """
   Smoothes a block in a single process
 
@@ -1467,24 +1468,24 @@ Now we have obtained models without internal boundaries between blocks and witho
 
   # Loading the current block model
   blockFileV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
-		      "_", startImage, "_", endImage, "_vtx.stl")
+                      "_", startImage, "_", endImage, "_vtx.stl")
   blockFileFV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
-		      "_", startImage, "_", endImage, "_faces.stl")
+                       "_", startImage, "_", endImage, "_faces.stl")
 
   if isfile(blockFileV)
     # Loading only model of the current block
     blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
     blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV,
-					    blockModelFV, 0)
+                                                                      blockModelFV, 0)
 
     # Loading a unique model from this block and its adjacents
     modelsFiles = Array(String, 0)
     for x in xBlock - 1:xBlock + 1
       for y in yBlock - 1:yBlock + 1
-	for z in range(startImage - (endImage - startImage),(endImage - startImage), 3)
-	  push!(modelsFiles, string(modelDirectory, "/model_output_",
-				    x, "-", y, "_", z, "_", z + (endImage - startImage)))
-	end
+        for z in range(startImage - (endImage - startImage),(endImage - startImage), 3)
+          push!(modelsFiles, string(modelDirectory, "/model_output_",
+                                    x, "-", y, "_", z, "_", z + (endImage - startImage)))
+        end
       end
     end
 
@@ -1498,23 +1499,23 @@ Now we have obtained models without internal boundaries between blocks and witho
     blockVerticesIndices = Array(Int, 0)
     for i in 1:length(blockModelV)
       for j in 1:length(modelV)
-	if blockModelV[i] == modelV[j]
-	  push!(blockVerticesIndices, j)
-	end
+        if blockModelV[i] == modelV[j]
+          push!(blockVerticesIndices, j)
+        end
       end
-
-      # Now I can apply smoothing on this model
-      V_sm, FV_sm = Smoother.smoothModel(modelV, modelFV)
-
-      # Now I have to get only block vertices and save them on the new model
-      V_final = Array(Array{Float64}, 0)
-      for i in blockVerticesIndices
-	push!(V_final, V_sm[i])
-      end
-      outputFilename = string(modelDirectory, "/smoothed_output_", xBlock, "-",
-			      yBlock, "_", startImage, "_", endImage)
-      Model2Obj.writeToObj(V_final, blockModelFV, outputFilename)
     end
+
+    # Now I can apply smoothing on this model
+    V_sm, FV_sm = Smoother.smoothModel(modelV, modelFV)
+
+    # Now I have to get only block vertices and save them on the new model
+    V_final = Array(Array{Float64}, 0)
+    for i in blockVerticesIndices
+      push!(V_final, V_sm[i])
+    end
+    outputFilename = string(modelDirectory, "/smoothed_output_", xBlock, "-",
+                            yBlock, "_", startImage, "_", endImage)
+    Model2Obj.writeToObj(V_final, blockModelFV, outputFilename)
   end
 end @}
 

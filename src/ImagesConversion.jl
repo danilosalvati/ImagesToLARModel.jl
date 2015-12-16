@@ -156,7 +156,7 @@ function startImageConversion(sliceDirectory, bestImage, outputDirectory, border
 @time pixelsToVoxels(sliceDirectory,
                       imageHeight, imageWidth, imageDepth,
                       imageDx, imageDy, imageDz,
-                      imageConversionProcess, outputDirectory,
+                      outputDirectory,
                       centroidsCalc, boundaryMat) 
 
   info("Merging boundaries")
@@ -198,7 +198,6 @@ function imageConversionProcess(sliceDirectory,
   independent process
   """
 
-  info("Transforming png data into 3d array")
   theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
                                                   startImage, endImage, centroids)
 
@@ -416,12 +415,12 @@ function mergeBlocksProcess(modelDirectory,
 end 
 
 function smoothBlocksProcess(modelDirectory,
-                              xBlock, yBlock,
-                              startImage, endImage,
-                              imageDx, imageDy,
-                              imageWidth, imageHeight,
-                              outputDirectory = None,
-                              centroidsCalc = None, boundaryMat = None)
+                             xBlock, yBlock,
+                             startImage, endImage,
+                             imageDx, imageDy,
+                             imageWidth, imageHeight,
+                             outputDirectory = None,
+                             centroidsCalc = None, boundaryMat = None)
   """
   Smoothes a block in a single process
 
@@ -436,13 +435,13 @@ function smoothBlocksProcess(modelDirectory,
   blockFileV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
                       "_", startImage, "_", endImage, "_vtx.stl")
   blockFileFV = string(modelDirectory, "/model_output_", xBlock, "-", yBlock,
-                      "_", startImage, "_", endImage, "_faces.stl")
+                       "_", startImage, "_", endImage, "_faces.stl")
 
   if isfile(blockFileV)
     # Loading only model of the current block
     blockModelV, blockModelFV = Model2Obj.getModelsFromFiles([blockFileV], [blockFileFV])
     blockModelV, blockModelFV = LARUtils.removeDoubleVerticesAndFaces(blockModelV,
-                                            blockModelFV, 0)
+                                                                      blockModelFV, 0)
 
     # Loading a unique model from this block and its adjacents
     modelsFiles = Array(String, 0)
@@ -469,19 +468,19 @@ function smoothBlocksProcess(modelDirectory,
           push!(blockVerticesIndices, j)
         end
       end
-
-      # Now I can apply smoothing on this model
-      V_sm, FV_sm = Smoother.smoothModel(modelV, modelFV)
-
-      # Now I have to get only block vertices and save them on the new model
-      V_final = Array(Array{Float64}, 0)
-      for i in blockVerticesIndices
-        push!(V_final, V_sm[i])
-      end
-      outputFilename = string(modelDirectory, "/smoothed_output_", xBlock, "-",
-                              yBlock, "_", startImage, "_", endImage)
-      Model2Obj.writeToObj(V_final, blockModelFV, outputFilename)
     end
+
+    # Now I can apply smoothing on this model
+    V_sm, FV_sm = Smoother.smoothModel(modelV, modelFV)
+
+    # Now I have to get only block vertices and save them on the new model
+    V_final = Array(Array{Float64}, 0)
+    for i in blockVerticesIndices
+      push!(V_final, V_sm[i])
+    end
+    outputFilename = string(modelDirectory, "/smoothed_output_", xBlock, "-",
+                            yBlock, "_", startImage, "_", endImage)
+    Model2Obj.writeToObj(V_final, blockModelFV, outputFilename)
   end
 end 
 

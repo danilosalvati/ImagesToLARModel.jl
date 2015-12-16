@@ -1051,8 +1051,7 @@ Now we will focus on the first step of our pipeline conversion: \textit{images c
 First thing to do is read an image calling the \texttt{PngStack2Array3dJulia}, after that is necessary to sort the centroid array for choosing correct background and foreground pixels.
 
 @D image read and centroids sort
-@{info("Transforming png data into 3d array")
-theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
+@{theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
 						startImage, endImage, centroids)
 
 centroidsSorted = sort(vec(reshape(centroids, 1, 2)))
@@ -1061,23 +1060,26 @@ foreground = centroidsSorted[2]
 debug(string("background = ", background, " foreground = ", foreground))
 @}
 
-Now we can compute grid parameters:
+Now we can start iterating on other blocks of the grid:
 
-@D compute grid parameters
-@{xStart = xBlock * imageDx
-yStart = yBlock * imageDy
-zStart = startImage
-
-xEnd = xStart + imageDx
-yEnd = yStart + imageDy
-
-imageDz = length(theImage)
-
-debug("***********")
-debug(string("xStart = ", xStart, " xEnd = ", xEnd))
-debug(string("yStart = ", yStart, " yEnd = ", yEnd))
-debug("theImage dimensions: ", size(theImage)[1], " ",
-      size(theImage[1])[1], " ", size(theImage[1])[2]) @}
+@D block iteration
+@{for xBlock in 0:(imageWidth / imageDx - 1)
+  for yBlock in 0:(imageHeight / imageDy - 1)
+  
+    xStart = xBlock * imageDx
+    yStart = yBlock * imageDy
+    zStart = startImage
+    
+    xEnd = xStart + imageDx
+    yEnd = yStart + imageDy
+  
+    imageDz = length(theImage)
+  
+    debug("***********")
+    debug(string("xStart = ", xStart, " xEnd = ", xEnd))
+    debug(string("yStart = ", yStart, " yEnd = ", yEnd))
+    debug("theImage dimensions: ", size(theImage)[1], " ",
+	  size(theImage[1])[1], " ", size(theImage[1])[2]) @}
 
 Here \textit{xStart} and \textit{yStart} are the absolute coordinates of the model and are calculated from the block coordinates. Now we can get the current slice for the entire image (with size $(imageDx, imageDy, imageDz)$), check values for every single pixel into it and, if it represents a foreground point, put it into an array called \texttt{chain3D}. This structure contains indexes of the linearized array created from the matrix. In Figure~\ref{fig:linearizedMatrix} there is a sample conversion from the matrix to the array
 
@@ -1234,12 +1236,45 @@ end @}
 
 This is the code for starting this pipeline step:
 
+@D pixelsToVoxels function
+@{function pixelsToVoxels(sliceDirectory,
+                        imageHeight, imageWidth, imageDepth,
+                        imageDx, imageDy, imageDz,
+                        outputDirectory,
+                        centroidsCalc, boundaryMat)
+  """
+  Function for conversion of pixels into voxels. It is different
+  from iterateOnBlocks because it needs a different distribution
+  of tasks between processes
+  """
+  beginImageStack = 0
+  endImage = beginImageStack
+
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 0:(imageDepth / imageDz - 1)
+    startImage = endImage
+    endImage = startImage + imageDz
+    task = @@spawn imageConversionProcess(sliceDirectory,
+                                         startImage, endImage,
+                                         imageDx, imageDy,
+                                         imageWidth, imageHeight,
+                                         outputDirectory,
+                                         centroidsCalc, boundaryMat)
+    push!(tasks, task)
+  end
+
+  # Waiting for tasks
+  for task in tasks
+    wait(task)
+  end
+end @}
+
 @D pixels to voxels conversion step
-@{@@time iterateOnBlocks(sliceDirectory,
-                  imageHeight, imageWidth, imageDepth,
-                  imageDx, imageDy, imageDz,
-                  imageConversionProcess, outputDirectory,
-                  centroidsCalc, boundaryMat) @}
+@{@@time pixelsToVoxels(sliceDirectory,
+                    imageHeight, imageWidth, imageDepth,
+                    imageDx, imageDy, imageDz,
+                    outputDirectory,
+                    centroidsCalc, boundaryMat) @}
                   
 \subsubsection{Boundaries merge step}\label{sec:boundariesStep}
 Next step of our pipeline consists in \textit{boundaries merge}. In fact, we have already seen that for every non-empty cell we create files for the inner parts and for the boundaries of the block. So if we want a final model without boundaries between internal blocks, we need to merge them removing duplicated faces on both sides (see Section~\ref{sec:removeDoubleFacesAndVerticesFromBoundaries} for a better explanation of this step). The following is the \texttt{processFunction}:
@@ -3036,6 +3071,8 @@ end
 @< main function for ImagesConversion @>
 
 @< parallel block iteration @>
+
+@< pixelsToVoxels function @>
 
 @< start conversion of images @>
 
