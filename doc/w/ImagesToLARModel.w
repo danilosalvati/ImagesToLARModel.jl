@@ -226,8 +226,14 @@ Because of their number it has been realized a function for simply loading them 
   catch
   end
   
+  threshold = Void
+  try
+    threshold = configuration["threshold"]
+  catch
+  end
+  
   return configuration["inputDirectory"], configuration["outputDirectory"],
-        crop, noise_shape
+        crop, noise_shape, threshold
 
 end
 @}
@@ -240,6 +246,7 @@ A valid JSON file has the following structure:
 \>  ``crop": Parameter for images resizing (they can be extended or cropped)\\
 \>  ``noise\_shape": A number which indicates the intensity of the denoising \\
 filter (0 if you want to disable denoising)\\
+\>  ``threshold": Set a threshold for input data\\
 \}\\
 \end{tabbing}
 
@@ -250,11 +257,12 @@ For example, we can write:
 \>  ``inputDirectory": ``/home/juser/IMAGES/",\\
 \>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
 \>  ``crop": [[1,800],[1,600],[1,50]],\\
-\>  ``noise\_shape": 0\\
+\>  ``noise\_shape": 0,\\
+\>  ``threshold": 13\\
 \}\\
 \end{tabbing}
 
-\textit{crop} and \textit{noise\_shape} are optional parameters
+\textit{crop}, \textit{noise\_shape}, and \textit{threshold} are optional parameters
 
 \subsection{Input loading for images conversion}\label{sec:input}
 
@@ -354,16 +362,16 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
   configurationFile: Path of the configuration file
   """
   inputPath, outputPath, crop,
-	  noise_shape = loadConfigurationPrepareData(open(configurationFile))
+	  noise_shape, threshold = loadConfigurationPrepareData(open(configurationFile))
 
-  prepareData(inputPath, outputPath, crop, noise_shape)
+  prepareData(inputPath, outputPath, crop, noise_shape, threshold)
       
 end
 @}
 
 @D manual data preparation
 @{function prepareData(inputPath, outputPath,
-		       crop = Void, noise_shape = 0)
+		       crop = Void, noise_shape = 0, threshold = Void)
   """
   Prepare the input data converting all files into png
   format with the desired resizing and denoising
@@ -373,6 +381,8 @@ end
   crop: Parameter for images resizing (they can be
         extended or cropped)
   noise_shape: The shape for image denoising
+  threshold: Threshold for the raw data. All pixel under it
+             will we set to black, otherwise they will be set to white
   """
   # Create output directory
   try
@@ -380,7 +390,7 @@ end
   catch
   end
 
-  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape)
+  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape, threshold)
 end
 @}
 
@@ -468,12 +478,14 @@ Conversion needs the following parameters:
  \item inputPath: path of the folder containing the original images
  \item outputPath: path where we will save png images
  \item crop: parameters for images resizing (they can be extended or cropped)
+ \item threshold: set a threshold for raw data. Pixel under that threshold will be set to black, otherwise they will be setted to white
 \end{itemize}
 
 Now we can examine single parts of conversion process. First of all we need to open the single image doing the following operations:
 \begin{enumerate}
  \item Open images using \texttt{Images} library (which relies on \texttt{ImageMagick}) and save them in greyscale png format 
- \item resize the images according to the \textit{crop} parameter
+ \item Resize the images according to the \textit{crop} parameter
+ \item Set the threshold for the image
 \end{enumerate}
 
 @D Greyscale conversion
@@ -487,8 +499,16 @@ As we can see, we first need to convert image to RGB and then reconverting to gr
   # Resize images on x-axis and y-axis
   gray_img = resizeImage(gray_img, crop)
 end @}
-    
+
 The code for image resizing will be better explained in section~\ref{sec:imageResize}.
+
+Now we can set a threshold for image data. The idea is to get a value set by the user and set to white all pixel over the threshold and set to black the remaining ones.
+@D Image thresholding
+@{if(threshold != Void)
+  imArray = raw(gray_img)
+  imArray = map(x-> if x > threshold return 0xff else return 0x00 end, imArray)
+  gray_img = grayim(imArray)
+end @}
 
 Finally we have to reduce noise on the image. The best choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
 
@@ -506,7 +526,7 @@ Finally this is the code for the entire function:
 
 @D Convert to png
 @{function convertImages(inputPath, outputPath,
-                       crop = Void, noise_shape_detect = 0)
+                       crop = Void, noise_shape_detect = 0, threshold = Void)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
@@ -519,6 +539,8 @@ Finally this is the code for the entire function:
   crop: Parameter for images resizing (they can be
         extended or cropped)
   noise_shape_detect: Shape for the denoising filter
+  threshold: Threshold for the raw data. All pixel under it
+             will we set to black, otherwise they will be set to white
   """
 
   imageFiles = readdir(inputPath)
@@ -529,7 +551,8 @@ Finally this is the code for the entire function:
     img = imread(string(inputPath, imageFile))
     @< Greyscale conversion @>
     @< Image resizing @>
-
+    
+    @< Image thresholding @>
     @< Reduce noise @>
     
    outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")

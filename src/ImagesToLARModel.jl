@@ -63,8 +63,14 @@ function loadConfigurationPrepareData(configurationFile)
   catch
   end
   
+  threshold = Void
+  try
+    threshold = configuration["threshold"]
+  catch
+  end
+  
   return configuration["inputDirectory"], configuration["outputDirectory"],
-        crop, noise_shape
+        crop, noise_shape, threshold
 
 end
 
@@ -76,14 +82,14 @@ function prepareData(configurationFile)
   configurationFile: Path of the configuration file
   """
   inputPath, outputPath, crop,
-          noise_shape = loadConfigurationPrepareData(open(configurationFile))
+          noise_shape, threshold = loadConfigurationPrepareData(open(configurationFile))
 
-  prepareData(inputPath, outputPath, crop, noise_shape)
+  prepareData(inputPath, outputPath, crop, noise_shape, threshold)
       
 end
 
 function prepareData(inputPath, outputPath,
-                       crop = Void, noise_shape = 0)
+                       crop = Void, noise_shape = 0, threshold = Void)
   """
   Prepare the input data converting all files into png
   format with the desired resizing and denoising
@@ -93,6 +99,8 @@ function prepareData(inputPath, outputPath,
   crop: Parameter for images resizing (they can be
         extended or cropped)
   noise_shape: The shape for image denoising
+  threshold: Threshold for the raw data. All pixel under it
+             will we set to black, otherwise they will be set to white
   """
   # Create output directory
   try
@@ -100,7 +108,7 @@ function prepareData(inputPath, outputPath,
   catch
   end
 
-  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape)
+  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape, threshold)
 end
 
 function convertImagesToLARModel(configurationFile)

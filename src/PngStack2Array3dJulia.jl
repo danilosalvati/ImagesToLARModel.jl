@@ -43,7 +43,7 @@ function resizeImage(image, crop)
 end 
 
 function convertImages(inputPath, outputPath,
-                       crop = Void, noise_shape_detect = 0)
+                       crop = Void, noise_shape_detect = 0, threshold = Void)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
@@ -56,6 +56,8 @@ function convertImages(inputPath, outputPath,
   crop: Parameter for images resizing (they can be
         extended or cropped)
   noise_shape_detect: Shape for the denoising filter
+  threshold: Threshold for the raw data. All pixel under it
+             will we set to black, otherwise they will be set to white
   """
 
   imageFiles = readdir(inputPath)
@@ -85,7 +87,12 @@ function convertImages(inputPath, outputPath,
       # Resize images on x-axis and y-axis
       gray_img = resizeImage(gray_img, crop)
     end 
-
+    
+    if(threshold != Void)
+      imArray = raw(gray_img)
+      imArray = map(x-> if x > threshold return 0xff else return 0x00 end, imArray)
+      gray_img = grayim(imArray)
+    end 
     # Denoising
     if noise_shape_detect != 0
       imArray = raw(gray_img)
