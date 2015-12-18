@@ -11,20 +11,16 @@ function adjVerts(V, FV)
   Returns the list of indices of vertices adjacent
   to a vertex
   """
-  VV = Array{Int}[]
-  for i in 1:length(V)
-    row = Array(Int, 0)
-    for face in FV
-      if i in face
-        for v in face
-          push!(row, v)
-        end
+  VV = Array(Array{Int},length(V))
+  for i in 1: length(FV)
+    for v in FV[i]
+      if(!isdefined(VV,v))
+        # Adding a new array for this vertex
+        VV[v] = Array{Int}[]
       end
+      push!(VV[v], FV[i][1], FV[i][2], FV[i][3])
+      VV[v] = unique(VV[v])
     end
-    if length(row) == 0
-      push!(row, i)
-    end
-    push!(VV, collect(unique(row)))
   end
   return VV
 end 
