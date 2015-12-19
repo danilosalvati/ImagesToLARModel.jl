@@ -99,7 +99,7 @@ function prepareData(inputPath, outputPath,
   crop: Parameter for images resizing (they can be
         extended or cropped)
   noise_shape: The shape for image denoising
-  threshold: Threshold for the raw data. All pixel under it
+  threshold: Threshold for the raw data. All pixels under it
              will we set to black, otherwise they will be set to white
   """
   # Create output directory

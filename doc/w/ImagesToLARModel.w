@@ -199,6 +199,7 @@ Data preparation (see Section~\ref{sec:dataPreparation} takes several parameters
  \item outputDirectory: The path of the directory with the output images
  \item crop: Parameter for images resizing (they can be extended or cropped)
  \item noise\_shape: Intensity of the denoising filter for images (0 if you want to disable it)
+ \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white
 \end{itemize}
 
 Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
@@ -246,7 +247,8 @@ A valid JSON file has the following structure:
 \>  ``crop": Parameter for images resizing (they can be extended or cropped)\\
 \>  ``noise\_shape": A number which indicates the intensity of the denoising \\
 filter (0 if you want to disable denoising)\\
-\>  ``threshold": Set a threshold for input data\\
+\>  ``threshold": set a threshold for raw data. Pixels under that threshold \\
+will be set to black, otherwise they will be set to white\\
 \}\\
 \end{tabbing}
 
@@ -381,7 +383,7 @@ end
   crop: Parameter for images resizing (they can be
         extended or cropped)
   noise_shape: The shape for image denoising
-  threshold: Threshold for the raw data. All pixel under it
+  threshold: Threshold for the raw data. All pixels under it
              will we set to black, otherwise they will be set to white
   """
   # Create output directory
@@ -478,7 +480,7 @@ Conversion needs the following parameters:
  \item inputPath: path of the folder containing the original images
  \item outputPath: path where we will save png images
  \item crop: parameters for images resizing (they can be extended or cropped)
- \item threshold: set a threshold for raw data. Pixel under that threshold will be set to black, otherwise they will be setted to white
+ \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white
 \end{itemize}
 
 Now we can examine single parts of conversion process. First of all we need to open the single image doing the following operations:
