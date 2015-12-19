@@ -36,7 +36,8 @@ For example we can write:
         "inputDirectory": "/home/juser/IMAGES/",
         "outputDirectory": "/home/juser/OUTPUT/",
         "crop": [[1,800],[1,600],[1,50]],
-        "noise_shape": 0
+        "noise_shape": 0,
+        "threshold": 8
     }
 
 These are the accepted parameters:
@@ -45,6 +46,8 @@ These are the accepted parameters:
 - outputDirectory: Directory containing the output
 - crop: Parameter for images resizing (they can be extended or cropped)
 - noise_shape: Intensity of the denoising filter for images (0 if you want to disable it)
+- threshold: Set a threshold for raw data. Pixels under that threshold will be set to
+black, otherwise they will be set to white
 
 #### Data conversion
 
