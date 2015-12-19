@@ -2,16 +2,11 @@
 
 ## ImagesToLARModel
 
-- Add interfaces for other file types
-- Investigate on best values for boundary operator size
-
 ## PngStack2Array3dJulia
 
 ## LARUtils
 
 ## GenerateBorderMatrix
-
-- Border Matrix Generation should be parallelized
 
 ## ImagesConversion
 
