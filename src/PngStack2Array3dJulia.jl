@@ -7,7 +7,7 @@ using Clustering
 using Logging
 @pyimport scipy.ndimage as ndimage
 
-export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
+export pngstack2array3d, getImageData, convertImages
 
 function resizeImage(image, crop)
   """
@@ -40,6 +40,43 @@ function resizeImage(image, crop)
     image = grayim(imArray)
   end
   return subim(image, crop[1][1]:crop[1][2], crop[2][1]:crop[2][2])
+end 
+function clusterImage(imArray)
+  """
+  Get a binary representation of an image returning
+  a two-color image using clustering
+  
+  imArray: array containing pixel values
+  
+  return the imArray with only two different values
+  """
+  
+  imageWidth = size(imArray)[1]
+  imageHeight = size(imArray)[2]
+
+  # Formatting data for clustering
+  image3d = Array(Array{Uint8,2}, 0)
+  push!(image3d, imArray)
+  pixels = reshape(image3d[1], (imageWidth * imageHeight), 1)
+  
+  # Computing assignments from the raw data
+  kmeansResults = kmeans(convert(Array{Float64}, transpose(pixels)), 2)
+  
+  qnt = kmeansResults.assignments
+  centers = kmeansResults.centers
+  
+  if(centers[1] == centers[2])
+    if centers[1] < 30 # I assume that a full image can have light gray pixels
+      qnt = fill(0x00, size(qnt))
+    else
+      qnt = fill(0xff, size(qnt))
+    end
+  else
+    minIndex = findmin(centers)[2]
+    qnt = map(x-> if x == minIndex return 0x00 else return 0xff end, qnt)
+  end
+  
+  return reshape(qnt, imageWidth, imageHeight)  
 end 
 
 function convertImages(inputPath, outputPath,
@@ -88,17 +125,17 @@ function convertImages(inputPath, outputPath,
       gray_img = resizeImage(gray_img, crop)
     end 
     
-    if(threshold != Void)
-      imArray = raw(gray_img)
-      imArray = map(x-> if x > threshold return 0xff else return 0x00 end, imArray)
-      gray_img = grayim(imArray)
-    end 
+    imArray = raw(gray_img)
     # Denoising
     if noise_shape_detect != 0
-      imArray = raw(gray_img)
       imArray = ndimage.median_filter(imArray, noise_shape_detect)
-      gray_img = grayim(imArray)
     end 
+    if(threshold != Void)
+      imArray = map(x-> if x > threshold return 0xff else return 0x00 end, imArray)
+    else
+      imArray = clusterImage(imArray)
+    end
+    gray_img = grayim(imArray) 
     
    outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")
    imwrite(gray_img, outputFilename)
@@ -129,43 +166,12 @@ function getImageData(imageFile)
   return width, height
 end
 
-function calculateClusterCentroids(path, image, numberOfClusters = 2)
-  """
-  Loads an image and calculate cluster centroids for segmentation
-
-  path: Path of the image folder
-  image: name of the image
-  numberOfClusters: number of desidered clusters
-  """
-  imageFilename = string(path, image)
-
-  img = imread(imageFilename) # Open png image with Julia Package
-
-  imArray = raw(img)
-
-  imageWidth = size(imArray)[1]
-  imageHeight = size(imArray)[2]
-
-  # Getting pixel values and saving them with another shape
-  image3d = Array(Array{Uint8,2}, 0)
-
-  # Inserting page on another list and reshaping
-  push!(image3d, imArray)
-  pixel = reshape(image3d[1], (imageWidth * imageHeight), 1)
-
-  centroids = kmeans(convert(Array{Float64},transpose(pixel)), 2).centers
-
-  return convert(Array{Uint8}, trunc(centroids))
-
-end
-
-function pngstack2array3d(path, minSlice, maxSlice, centroids)
+function pngstack2array3d(path, minSlice, maxSlice)
   """
   Import a stack of PNG images into a 3d array
 
   path: path of images directory
   minSlice and maxSlice: number of first and last slice
-  centroids: centroids for image segmentation
   """
 
   # image3d contains all images values
@@ -179,48 +185,13 @@ function pngstack2array3d(path, minSlice, maxSlice, centroids)
     imageFilename = string(path, files[slice + 1])
     debug("image name: ", imageFilename)
     img = imread(imageFilename) # Open png image with Julia Package
-    imArray = raw(img) # Putting pixel values into RAW 3d array 
+    imArray = raw(img) # Putting pixel values into RAW 3d array
     debug("imArray size: ", size(imArray))
 
-    # Inserting page on another list and reshaping
+    # Inserting page on another list
     push!(image3d, imArray)
 
   end
-
-  # Quantization
-  for page in 1:length(image3d)
-
-    # Image Quantization
-    debug("page = ", page)
-    debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
-    pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-    kmeansResults = kmeans!(convert(Array{Float64},transpose(pixel)),
-                    convert(Array{Float64},centroids))
-
-    qnt = kmeansResults.assignments
-    centers = kmeansResults.centers
-    if(centers[1] == centers[2])
-      # The image has only a value
-      index = findmin([abs(centroids[1]-centers[1]),abs(centroids[2]-centers[1])])[2]
-      qnt = fill(index, size(qnt))
-    end
-
-    # Reshaping quantization result
-    centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
-
-    # Inserting quantized values into 3d image array
-    tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
-
-    for j in 1:size(image3d[1],2)
-      for i in 1:size(image3d[1],1)
-        tmp[i,j] = centroids[centers_idx[i,j]]
-      end
-    end
-
-    image3d[page] = tmp 
-
-  end
-
   return image3d
 end
 

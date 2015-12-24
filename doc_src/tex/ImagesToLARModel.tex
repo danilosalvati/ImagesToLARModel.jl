@@ -199,7 +199,7 @@ Data preparation (see Section~\ref{sec:dataPreparation} takes several parameters
  \item outputDirectory: The path of the directory with the output images
  \item crop: Parameter for images resizing (they can be extended or cropped)
  \item noise\_shape: Intensity of the denoising filter for images (0 if you want to disable it)
- \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white
+ \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white. If threshold is not specified, segmentation will be done using a clustering algorithm
 \end{itemize}
 
 Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
@@ -273,8 +273,7 @@ Images conversion takes several parameters:
 \begin{itemize}
  \item inputDirectory: The path of the directory containing the stack of images
  \item outputDirectory: The path of the directory containing the output
- \item bestImage: Image chosen for centroid computation (see section~\ref{sec:PngStack2Array3dJulia})
- \item nx, ny, nz: Sizes of the grid chosen for image segmentation (see section~\ref{sec:PngStack2Array3dJulia})
+ \item nx, ny, nz: Sizes of the grid chosen for image segmentation (see section~\ref{sec:ImagesConversion})
  \item DEBUG\_LEVEL: Debug level for Julia logger
  \item parallelMerge (experimental): Choose between sequential or parallel merge of files (see section~\ref{sec:Model2Obj})
 \end{itemize}
@@ -304,7 +303,6 @@ Because of their number it has been realized a function for simply loading them 
   end
    
   return configuration["inputDirectory"], configuration["outputDirectory"],
-	configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
         DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
         parallelMerge
@@ -317,7 +315,6 @@ A valid JSON file has the following structure:
 \{ \= \\
 \>  ``inputDirectory": ``Path of the input directory",\\
 \>  ``outputDirectory": ``Path of the output directory",\\
-\>  ``bestImage": ``Name of the best image (with extension) ",\\
 \>  ``nx": x grid size,\\
 \>  ``ny": y grid size,\\
 \>  ``nz": border z,\\
@@ -332,7 +329,6 @@ For example, we can write:
 \{ \= \\
 \>  ``inputDirectory": ``/home/juser/IMAGES/",\\
 \>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
-\>  ``bestImage": ``0009.tiff",\\
 \>  ``nx": 2,\\
 \>  ``ny": 2,\\
 \>  ``nz": 2,\\
@@ -408,15 +404,15 @@ As we have already said, this module has the only responsibility to collect data
 
   configurationFile: Path of the configuration file
   """
-  inputDirectory, outputDirectory, bestImage, nx, ny, nz,
+  inputDirectory, outputDirectory, nx, ny, nz,
       DEBUG_LEVEL, parallelMerge = loadConfiguration(open(configurationFile))
-  convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
+  convertImagesToLARModel(inputDirectory, outputDirectory,
 			nx, ny, nz, DEBUG_LEVEL, parallelMerge)
 end
 @}
 
 @D Start manual conversion
-@{function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
+@{function convertImagesToLARModel(inputDirectory, outputDirectory,
                                  nx, ny, nz, DEBUG_LEVEL = INFO,
                                  parallelMerge = false)
   """
@@ -424,8 +420,7 @@ end
 
   inputDirectory: Directory containing the stack of images
   outputDirectory: Directory containing the output
-  bestImage: Image chosen for centroids computation
-  nx, ny, nz: Border dimensions (Possibly the biggest power of two of images dimensions)
+  nx, ny, nz: Border dimensions
   DEBUG_LEVEL: Debug level for Julia logger. It can be one of the following:
     - DEBUG
     - INFO
@@ -442,7 +437,7 @@ end
   end
 
   Logging.configure(level=DEBUG_LEVEL)
-  ImagesConversion.images2LARModel(nx, ny, nz, bestImage,
+  ImagesConversion.images2LARModel(nx, ny, nz,
 	  inputDirectory, outputDirectory, parallelMerge)
 end
 @}
@@ -465,7 +460,7 @@ using Clustering
 using Logging
 @@pyimport scipy.ndimage as ndimage
 
-export calculateClusterCentroids, pngstack2array3d, getImageData, convertImages
+export pngstack2array3d, getImageData, convertImages
 @}
 
 We need \texttt{Images}, \texttt{Clustering} and \texttt{Colors} packages for manipulating png images and \texttt{PyCall} for using Python functions for noise removal from images.
@@ -473,27 +468,29 @@ As a consequence, we need a python environment with \texttt{scipy} to be able to
 
 \subsection{Convert input to png}\label{sec:convertPNG}
 
-First thing to do in our program is getting our input folder and convert the stack of images into png format. This process lets us to avoid managing an enormous variety of formats during computation, simplifying code used for transformation.\\
+First thing to do in our program is getting our input folder and convert the stack of images into png format with only two values. This process lets us to avoid managing an enormous variety of formats during computation, simplifying code used for transformation.\\
 
 Conversion needs the following parameters:
 \begin{itemize}
  \item inputPath: path of the folder containing the original images
  \item outputPath: path where we will save png images
  \item crop: parameters for images resizing (they can be extended or cropped)
- \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white
+ \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white. If the threshold is not set, the image will be converted using a clustering algorithm
 \end{itemize}
 
-Now we can examine single parts of conversion process. First of all we need to open the single image doing the following operations:
+Now we can examine single parts of conversion process. We need to open the single image doing the following operations:
 \begin{enumerate}
  \item Open images using \texttt{Images} library (which relies on \texttt{ImageMagick}) and save them in greyscale png format 
  \item Resize the images according to the \textit{crop} parameter
- \item Set the threshold for the image
+ \item Apply a denoising filter for the image
+ \item Set the threshold for the image or start the clustering algorithm
 \end{enumerate}
+
+This is the code used for every step.
 
 @D Greyscale conversion
 @{rgb_img = convert(Image{ColorTypes.RGB}, img)
 gray_img = convert(Image{ColorTypes.Gray}, rgb_img) @}
-    
 As we can see, we first need to convert image to RGB and then reconverting to greyscale. Without the RGB conversion these rows will return a stackoverflow error due to the presence of alpha channel
 
 @D Image resizing
@@ -502,29 +499,42 @@ As we can see, we first need to convert image to RGB and then reconverting to gr
   gray_img = resizeImage(gray_img, crop)
 end @}
 
-The code for image resizing will be better explained in section~\ref{sec:imageResize}.
+The code for image resizing will be better explained in Section~\ref{sec:imageResize}.
 
-Now we can set a threshold for image data. The idea is to get a value set by the user and set to white all pixel over the threshold and set to black the remaining ones.
-@D Image thresholding
-@{if(threshold != Void)
-  imArray = raw(gray_img)
-  imArray = map(x-> if x > threshold return 0xff else return 0x00 end, imArray)
-  gray_img = grayim(imArray)
-end @}
-
-Finally we have to reduce noise on the image. The best choice is using a \textit{median filter} from package \texttt{scipy.ndimage} because it preserves better the edges of the image:
+Now we have to reduce noise on the image. The best choice consists in using a \textit{median filter} from package \texttt{scipy.ndimage}, because it preserves better the edges of the image:
 
 @D Reduce noise
-@{# Denoising
+@{imArray = raw(gray_img)
+# Denoising
 if noise_shape_detect != 0
-  imArray = raw(gray_img)
   imArray = ndimage.median_filter(imArray, noise_shape_detect)
-  gray_img = grayim(imArray)
 end @}
 
-Where imArray is an array containing all raw data from images
+The \texttt{Images.jl} \texttt{raw} function used here, get all pixel values saving them in an Array, which we have called \textit{imArray}. In Figure~\ref{fig:rawImage} we can see how the array will be like for a sample greyscale image.
 
-Finally this is the code for the entire function:
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.27\linewidth]{images/grayscalesample.png}
+   \includegraphics[width=0.47\linewidth]{images/imArraypart.png} \\
+   
+   \includegraphics[width=0.67\linewidth]{images/imArrayfull.png} \hfill
+   \caption{Reading raw data from image. (a) Original greyscale image (b) A view of raw data array (c) The entire raw data array with main color highlighted}
+   \label{fig:rawImage}
+\end{figure}
+
+Finally we can set a threshold for image data. The idea is to get a value from the user and set to white all pixel over the threshold and set to black the remaining ones.
+
+@D Image thresholding
+@{if(threshold != Void)
+  imArray = map(x-> if x > threshold return 0xff else return 0x00 end, imArray)
+else
+  imArray = clusterImage(imArray)
+end
+gray_img = grayim(imArray) @}
+
+
+The code used for image clustering will be explained in Section~\ref{sec:imageClustering}. 
+This is the code for the entire function:
 
 @D Convert to png
 @{function convertImages(inputPath, outputPath,
@@ -554,8 +564,8 @@ Finally this is the code for the entire function:
     @< Greyscale conversion @>
     @< Image resizing @>
     
-    @< Image thresholding @>
     @< Reduce noise @>
+    @< Image thresholding @>
     
    outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")
    imwrite(gray_img, outputFilename)
@@ -563,6 +573,16 @@ Finally this is the code for the entire function:
   end
 end
 @}
+
+\begin{figure}[htb] %  figure placement: here, top, bottom
+   \centering
+   \includegraphics[width=0.30\linewidth]{images/grayscalesample.png} \hfill
+   \includegraphics[width=0.30\linewidth]{images/denoised.png} \hfill
+   \includegraphics[width=0.30\linewidth]{images/quantized.png} \hfill
+   \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
+   \label{fig:imageTransformation}
+\end{figure}
+
 
 \subsubsection{Image resizing}\label{sec:imageResize}
 
@@ -631,6 +651,53 @@ if(crop!= Void)
   imageFiles = imageFiles[crop[3][1]:min(numberOfImages, crop[3][2])]
 end @}
 
+\subsubsection{Image clustering}\label{sec:imageClustering}
+
+When the user does not set a threshold for data segmentation, the software uses a k-means clustering algorithm for determining the values for binary images. First thing to do is to change raw data so it can be passed to the clustering function of the \texttt{Clustering.jl} package. After clustering completion, data is set to \textit{0x00} or \textit{0xff} depending on the algorithm assignments.
+
+@D image clustering
+@{function clusterImage(imArray)
+  """
+  Get a binary representation of an image returning
+  a two-color image using clustering
+  
+  imArray: array containing pixel values
+  
+  return the imArray with only two different values
+  """
+  
+  imageWidth = size(imArray)[1]
+  imageHeight = size(imArray)[2]
+
+  # Formatting data for clustering
+  image3d = Array(Array{Uint8,2}, 0)
+  push!(image3d, imArray)
+  pixels = reshape(image3d[1], (imageWidth * imageHeight), 1)
+  
+  # Computing assignments from the raw data
+  kmeansResults = kmeans(convert(Array{Float64}, transpose(pixels)), 2)
+  
+  qnt = kmeansResults.assignments
+  centers = kmeansResults.centers
+  
+  if(centers[1] == centers[2])
+    if centers[1] < 30 # I assume that a full image can have light gray pixels
+      qnt = fill(0x00, size(qnt))
+    else
+      qnt = fill(0xff, size(qnt))
+    end
+  else
+    minIndex = findmin(centers)[2]
+    qnt = map(x-> if x == minIndex return 0x00 else return 0xff end, qnt)
+  end
+  
+  return reshape(qnt, imageWidth, imageHeight)  
+end @}
+
+
+We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This could happen when the images is completely empty or it has only colored pixels. So, we need to check this cases and fill the assignments array \texttt{qnt} with the right values based a fixed threshold.
+
+
 \subsection{Getting data from a png}\label{sec:getData}
 
 Now we need to load information data from png images. In particular we are interested in getting width and height of an image. As stated in~\cite{W3CPNG} document, a standard PNG file contains a \textit{signature} followed by a sequence of \textit{chunks} (each one with a specific type).\\
@@ -689,128 +756,28 @@ So for reading width and height we need first 24 bytes; the first eight contain 
 end
 @}
 
-\subsection{Centroids computation}\label{sec:centroids}
-
-As we have seen above, this package uses greyscale images for conversion into three-dimensional models and for next steps we need binary images so we can distinguish between the background and the model we want to represent. We can use clustering techniques for obtaining this result. First step is centroids calculation from a chosen image (this choice must be made from the user, because we cannot knowing in advance what is the best image for finding clusters).
-Moreover we compute these centroids only for an image and then reuse them when we want to cluster all other images, saving processing time.\\
-Actually we need only two centroids, because next steps should only recognize between background and foreground pixels.
-This is the code used for centroid computation:
-
-@D Centroid computation
-@{function calculateClusterCentroids(path, image, numberOfClusters = 2)
-  """
-  Loads an image and calculate cluster centroids for segmentation
-
-  path: Path of the image folder
-  image: name of the image
-  numberOfClusters: number of desidered clusters
-  """
-  imageFilename = string(path, image)
-
-  img = imread(imageFilename) # Open png image with Julia Package
-
-  imArray = raw(img)
-
-  imageWidth = size(imArray)[1]
-  imageHeight = size(imArray)[2]
-
-  # Getting pixel values and saving them with another shape
-  image3d = Array(Array{Uint8,2}, 0)
-
-  # Inserting page on another list and reshaping
-  push!(image3d, imArray)
-  pixel = reshape(image3d[1], (imageWidth * imageHeight), 1)
-
-  centroids = kmeans(convert(Array{Float64},transpose(pixel)), 2).centers
-
-  return convert(Array{Uint8}, trunc(centroids))
-
-end
-@}
-
 \subsection{Transform pixels into three-dimensional array}\label{sec:transformation}
 
-Now we can study the most important part of this module, where images are converted into data usable by other modules for the creation of the three-dimensional model. The basic concept consists in transforming every single pixel in an integer value representing color, and then clustering them all using centroids computed earlier. So, we can obtain a matrix containing only two values (the two centroids) representing background and foreground of the image.\\
-Now we will follow the code. This function uses four parameters
+Now we can study the most important part of this module, where images are converted into data usable by other modules for the creation of the three-dimensional model. The basic concept consists in transforming every single pixel in an integer value representing color, obtaining a matrix containing only two values representing background and foreground of the image.\\
+Now we will follow the code. This function uses three parameters:
 
 \begin{itemize}
  \item path: Path of the images directory
  \item minSlice: First image to read
  \item maxSlice: Last image to read
- \item centroids: Array containing centroids for clustering
 \end{itemize}
 
-For every image we want to transform in the interval [minSlice, maxSlice) we have to read it from disk and save pixel informations into a multidimensional Array:
-
-@D Read raw data
-@{img = imread(imageFilename) # Open png image with Julia Package
-imArray = raw(img) # Putting pixel values into RAW 3d array @}
-
-The \texttt{Images.jl} \texttt{raw} function, get all pixel values saving them in an Array. In Figure~\ref{fig:rawImage} we can see how the array will be like for a sample greyscale image.
-
-\begin{figure}[htb] %  figure placement: here, top, bottom
-   \centering
-   \includegraphics[width=0.27\linewidth]{images/grayscalesample.png}
-   \includegraphics[width=0.47\linewidth]{images/imArraypart.png} \\
-   
-   \includegraphics[width=0.67\linewidth]{images/imArrayfull.png} \hfill
-   \caption{Reading raw data from image. (a) Original greyscale image (b) A view of raw data array (c) The entire raw data array with main color highlighted}
-   \label{fig:rawImage}
-\end{figure}
-
-Finally we have to compute clusters obtaining images with only two values:
-
-@D Clustering images
-@{# Image Quantization
-debug("page = ", page)
-debug("image3d[page] dimensions: ", size(image3d[page])[1], "\t", size(image3d[page])[2])
-pixel = reshape(image3d[page], size(image3d[page])[1] * size(image3d[page])[2] , 1)
-kmeansResults = kmeans!(convert(Array{Float64},transpose(pixel)),
-                convert(Array{Float64},centroids))
-
-qnt = kmeansResults.assignments
-centers = kmeansResults.centers
-if(centers[1] == centers[2])
-  # The image has only a value
-  index = findmin([abs(centroids[1]-centers[1]),abs(centroids[2]-centers[1])])[2]
-  qnt = fill(index, size(qnt))
-end
-
-# Reshaping quantization result
-centers_idx = reshape(qnt, size(image3d[page],1), size(image3d[page],2))
-
-# Inserting quantized values into 3d image array
-tmp = Array(Uint8, size(image3d[page],1), size(image3d[page],2))
-
-for j in 1:size(image3d[1],2)
-  for i in 1:size(image3d[1],1)
-    tmp[i,j] = centroids[centers_idx[i,j]]
-  end
-end
-
-image3d[page] = tmp @}
-
-\begin{figure}[htb] %  figure placement: here, top, bottom
-   \centering
-   \includegraphics[width=0.30\linewidth]{images/grayscalesample.png} \hfill
-   \includegraphics[width=0.30\linewidth]{images/denoised.png} \hfill
-   \includegraphics[width=0.30\linewidth]{images/quantized.png} \hfill
-   \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
-   \label{fig:imageTransformation}
-\end{figure}
-
-We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This could happen when the images is completely empty or it has only colored pixels. So, we need to check this cases and fill the assignments array \texttt{qnt} with the right values based on the \texttt{centroids} parameter.
+For every image we want to transform in the interval [minSlice, maxSlice) we have to read it from disk and save pixel informations into a multidimensional Array.
 
 This is the complete code:
 
 @D Pixel transformation
-@{function pngstack2array3d(path, minSlice, maxSlice, centroids)
+@{function pngstack2array3d(path, minSlice, maxSlice)
   """
   Import a stack of PNG images into a 3d array
 
   path: path of images directory
   minSlice and maxSlice: number of first and last slice
-  centroids: centroids for image segmentation
   """
 
   # image3d contains all images values
@@ -823,21 +790,14 @@ This is the complete code:
     debug("slice = ", slice)
     imageFilename = string(path, files[slice + 1])
     debug("image name: ", imageFilename)
-    @< Read raw data @>
+    img = imread(imageFilename) # Open png image with Julia Package
+    imArray = raw(img) # Putting pixel values into RAW 3d array
     debug("imArray size: ", size(imArray))
 
-    # Inserting page on another list and reshaping
+    # Inserting page on another list
     push!(image3d, imArray)
 
   end
-
-  # Quantization
-  for page in 1:length(image3d)
-
-    @< Clustering images @>
-
-  end
-
   return image3d
 end
 @}
@@ -869,7 +829,7 @@ So, instead of converting the entire model with a unique process, we can subdivi
 Summing up we can define the following terms, which will be used in next parts of this documentation:
 
 \begin{itemize}
- \item \textbf{Grid:} It is the subdivision of the entire stack of images, with sizes defined by the user. They should be powers of two (for increasing performance during border matrix computation which we will see in section~\ref{sec:GenerateBorderMatrix})
+ \item \textbf{Grid:} It is the subdivision of the entire stack of images, with sizes defined by the user.
  \item \textbf{Block:} It is a single cell of the grid
  \item \textbf{xBlock:} It is the x-coordinate of a block
  \item \textbf{yBlock:} It is the y-coordinate of a block
@@ -901,21 +861,20 @@ As a first thing, we will see how to prepare our data for conversion process. Fi
 Later we can start conversion with all these parameters calling \texttt{startImageConversion} function, which will be explained in next subsection.
 
 @D main function for ImagesConversion
-@{function images2LARModel(nx, ny, nz, bestImage,
-			inputDirectory, outputDirectory,
-			parallelMerge)
+@{function images2LARModel(nx, ny, nz,
+                         inputDirectory, outputDirectory,
+                         parallelMerge)
   """
   Convert a stack of images into a 3d model
   """
 
   info("Starting model creation")
 
-  numberOfClusters = 2 # Number of clusters for
-                       # images segmentation
-
+  # Get sizes of the stack of images
+  fileList = readdir(inputDirectory)
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
-				      string(inputDirectory, bestImage))
-  imageDepth = length(readdir(inputDirectory))
+    string(inputDirectory, fileList[1]))
+  imageDepth = length(fileList)
 
   # Computing border matrix
   info("Computing border matrix")
@@ -924,14 +883,13 @@ Later we can start conversion with all these parameters calling \texttt{startIma
   catch
   end
   borderFilename = GenerateBorderMatrix.getOriented3BorderPath(
-					string(outputDirectory, "BORDERS"), nx, ny, nz)
+    string(outputDirectory, "BORDERS"), nx, ny, nz)
 
   # Starting images conversion and border computation
-  info("Starting images conversion")
-  startImageConversion(inputDirectory, bestImage, outputDirectory, borderFilename,
+  startImageConversion(inputDirectory, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
-                       numberOfClusters, parallelMerge)
+                       parallelMerge)
 
 end
 @}
@@ -953,9 +911,6 @@ Every single step of the pipeline, is executed in parallel for every block of th
  \item \textbf{imageHeight, imageWidth, imageDepth}: Sizes of the stack of images
  \item \textbf{imageDx, imageDy, imageDz}: Sizes of the grid
  \item \textbf{processFunction}: Function that contains instructions for execution of a single step of the pipeline for every block
- \item \textbf{outputDirectory}: Directory which will contains the output
- \item \textbf{centroids}: Centroids from the best image
- \item \textbf{boundaryMat}: Boundary operator for the chosen grid
 \end{itemize}
 
 This function will iterate on all blocks of the image grid executing the process function, which will be different for every pipeline step. This is the code used:
@@ -964,8 +919,7 @@ This function will iterate on all blocks of the image grid executing the process
 @{function iterateOnBlocks(inputDirectory,
                          imageHeight, imageWidth, imageDepth,
                          imageDx, imageDy, imageDz,
-                         processFunction, outputDirectory,
-                         centroidsCalc, boundaryMat)
+                         processFunction)
   """
   Simple function that iterates on blocks for executing
   a task described by a processFunction
@@ -974,9 +928,6 @@ This function will iterate on all blocks of the image grid executing the process
   imageHeight, imageWidth, imageDepth: Images sizes
   imageDx, imageDy, imageDz: Sizes of cells grid
   processFunction: Function that will be executed on a separate task
-  outputDirectory: Directory which will contains the output
-  centroidsCalc: Centroids from the best image
-  boundaryMat: Boundary operator for the chosen grid
   """
 
   beginImageStack = 0
@@ -992,9 +943,7 @@ This function will iterate on all blocks of the image grid executing the process
                                       xBlock, yBlock,
                                       startImage, endImage,
                                       imageDx, imageDy,
-                                      imageWidth, imageHeight,
-                                      outputDirectory,
-                                      centroidsCalc, boundaryMat)
+                                      imageWidth, imageHeight)
         push!(tasks, task)
       end
     end
@@ -1013,15 +962,8 @@ Now we can see the entire pipeline for images conversion.\\
 
 First of all we need to compute the centroids from the best image using module \texttt{PngStack2Array3dJulia} and get the previously computed border matrix in csc sparse array format
 
-@D compute centroids and get border matrix
-@{# Create clusters for image segmentation
-info("Computing image centroids")
-debug("Best image = ", bestImage)
-centroidsCalc = PngStack2Array3dJulia.calculateClusterCentroids(sliceDirectory,
-					bestImage, numberOfClusters)
-debug(string("centroids = ", centroidsCalc))
-
-try
+@D get border matrix
+@{try
   mkdir(string(outputDirectory, "BORDERS"))
 catch
 end
@@ -1054,18 +996,17 @@ end @}
 As we can see, last pipeline step does not require iteration on all grid blocks. This is the code for the function that starts the pipeline, with the parts explained earlier: 
 
 @D start conversion of images
-@{function startImageConversion(sliceDirectory, bestImage, outputDirectory, borderFilename,
+@{function startImageConversion(sliceDirectory, outputDirectory, borderFilename,
                               imageHeight, imageWidth, imageDepth,
                               imageDx, imageDy, imageDz,
-                              numberOfClusters, parallelMerge)
+                              parallelMerge)
   """
   Support function for converting a stack of images into a model
 
   sliceDirectory: directory containing the image stack
-  imageForCentroids: image chosen for centroid computation
   """
 
-  @< compute centroids and get border matrix @>
+  @< get border matrix @>
   @< pipeline conversion @>  
 end
 @}
@@ -1073,16 +1014,11 @@ end
 \subsubsection{Images conversion step}\label{sec:conversionProcess}
 
 Now we will focus on the first step of our pipeline conversion: \textit{images conversion}.\\
-First thing to do is read an image calling the \texttt{PngStack2Array3dJulia}, after that is necessary to sort the centroid array for choosing correct background and foreground pixels.
+First thing to do is read an image calling the \texttt{PngStack2Array3dJulia}.
 
-@D image read and centroids sort
+@D image read
 @{theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
-						startImage, endImage, centroids)
-
-centroidsSorted = sort(vec(reshape(centroids, 1, 2)))
-background = centroidsSorted[1]
-foreground = centroidsSorted[2]
-debug(string("background = ", background, " foreground = ", foreground))
+						startImage, endImage)
 @}
 
 Now we can start iterating on other blocks of the grid:
@@ -1156,7 +1092,7 @@ This is the code for getting foreground pixels:
 for z in 1 : imageDz
   for y in 1 : imageDy
     for x in 1 : imageDx
-      if(theImage[z][x + xStart, y + yStart] == foreground)
+      if(theImage[z][x + xStart, y + yStart] == 0xff)
         index = x - 1 + (y - 1) * imageDx + (z - 1) * (imageDx * imageDy)
 	push!(chains3D, index)
       end
@@ -1227,13 +1163,13 @@ This is the \texttt{processFunction} for this pipeline step
 			      imageDx, imageDy,
 			      imageWidth, imageHeight,
 			      outputDirectory,
-			      centroids, boundaryMat)
+			      boundaryMat)
   """
   Support function for converting a stack of image on a single
   independent process
   """
 
-  @< image read and centroids sort @>
+  @< image read @>
   
   @< block iteration @>
 
@@ -1266,7 +1202,7 @@ This is the code for starting this pipeline step:
                         imageHeight, imageWidth, imageDepth,
                         imageDx, imageDy, imageDz,
                         outputDirectory,
-                        centroidsCalc, boundaryMat)
+                        boundaryMat)
   """
   Function for conversion of pixels into voxels. It is different
   from iterateOnBlocks because it needs a different distribution
@@ -1284,7 +1220,7 @@ This is the code for starting this pipeline step:
                                          imageDx, imageDy,
                                          imageWidth, imageHeight,
                                          outputDirectory,
-                                         centroidsCalc, boundaryMat)
+                                         boundaryMat)
     push!(tasks, task)
   end
 
@@ -1299,10 +1235,10 @@ end @}
                     imageHeight, imageWidth, imageDepth,
                     imageDx, imageDy, imageDz,
                     outputDirectory,
-                    centroidsCalc, boundaryMat) @}
+                    boundaryMat) @}
                     
 How we can see, for this step we do not use the \texttt{iterateOnBlocks} function, in fact pixel to voxel conversion is more efficient if we parallelize tasks assigning to each process an entire z-Block.
-                  
+
 \subsubsection{Boundaries merge step}\label{sec:boundariesStep}
 Next step of our pipeline consists in \textit{boundaries merge}. In fact, we have already seen that for every non-empty cell we create files for the inner parts and for the boundaries of the block. So if we want a final model without boundaries between internal blocks, we need to merge them removing duplicated faces on both sides (see Section~\ref{sec:removeDoubleFacesAndVerticesFromBoundaries} for a better explanation of this step). The following is the \texttt{processFunction}:
 
@@ -1311,9 +1247,7 @@ Next step of our pipeline consists in \textit{boundaries merge}. In fact, we hav
 				  xBlock, yBlock,
 				  startImage, endImage,
 				  imageDx, imageDy,
-				  imageWidth, imageHeight,
-				  outputDirectory = None,
-				  centroidsCalc = None, boundaryMat = None)
+				  imageWidth, imageHeight)
   """
   Helper function for mergeBoundaries.
   It is executed on different processes
@@ -1399,8 +1333,7 @@ This is the code used to start this pipeline step:
 @{@@time iterateOnBlocks(string(outputDirectory, "MODELS"),
                   imageHeight, imageWidth, imageDepth,
                   imageDx, imageDy, imageDz,
-                  mergeBoundariesProcess, None,
-                  None, None) @}
+                  mergeBoundariesProcess) @}
                 
 \subsubsection{Block merge step}\label{sec:blockMergeStep}
 
@@ -1411,9 +1344,7 @@ At this step of the computation, we have files with the inner parts of a single 
 			      xBlock, yBlock,
 			      startImage, endImage,
 			      imageDx, imageDy,
-			      imageWidth, imageHeight,
-			      outputDirectory = None,
-			      centroidsCalc = None, boundaryMat = None)
+			      imageWidth, imageHeight)
   """
   Helper function for mergeBlocks.
   It is executed on different processes
@@ -1465,8 +1396,7 @@ This is the code for block merge starting
 @{@@time iterateOnBlocks(string(outputDirectory, "MODELS"),
                   imageHeight, imageWidth, imageDepth,
                   imageDx, imageDy, imageDz,
-                  mergeBlocksProcess, None,
-                  None, None) @}
+                  mergeBlocksProcess) @}
 
 
 \subsubsection{Smoothing step}\label{sec:smoothingStep}
@@ -1478,9 +1408,7 @@ Now we have obtained models without internal boundaries between blocks and witho
                              xBlock, yBlock,
                              startImage, endImage,
                              imageDx, imageDy,
-                             imageWidth, imageHeight,
-                             outputDirectory = None,
-                             centroidsCalc = None, boundaryMat = None)
+                             imageWidth, imageHeight)
   """
   Smoothes a block in a single process
 
@@ -1572,8 +1500,7 @@ Moreover, this \texttt{processFunction} can only execute a single iteration of t
     iterateOnBlocks(modelDirectory,
                     imageHeight, imageWidth, imageDepth,
                     imageDx, imageDy, imageDz,
-                    smoothBlocksProcess,
-                    None, None, None)
+                    smoothBlocksProcess)
 
     # Moving smoothed file for next iterations
 
@@ -3205,10 +3132,10 @@ end
 
 @< modules import PngStack2Array3dJulia @>
 @<image resizing @>
+@<image clustering @>
 
 @< Convert to png @>
 @< Get image data @>
-@< Centroid computation @>
 @< Pixel transformation @>
 end
 @}

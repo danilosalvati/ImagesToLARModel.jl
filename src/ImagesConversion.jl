@@ -12,21 +12,20 @@ using Logging
 export images2LARModel
 
 
-function images2LARModel(nx, ny, nz, bestImage,
-                        inputDirectory, outputDirectory,
-                        parallelMerge)
+function images2LARModel(nx, ny, nz,
+                         inputDirectory, outputDirectory,
+                         parallelMerge)
   """
   Convert a stack of images into a 3d model
   """
 
   info("Starting model creation")
 
-  numberOfClusters = 2 # Number of clusters for
-                       # images segmentation
-
+  # Get sizes of the stack of images
+  fileList = readdir(inputDirectory)
   imageWidth, imageHeight = PngStack2Array3dJulia.getImageData(
-                                      string(inputDirectory, bestImage))
-  imageDepth = length(readdir(inputDirectory))
+    string(inputDirectory, fileList[1]))
+  imageDepth = length(fileList)
 
   # Computing border matrix
   info("Computing border matrix")
@@ -35,14 +34,13 @@ function images2LARModel(nx, ny, nz, bestImage,
   catch
   end
   borderFilename = GenerateBorderMatrix.getOriented3BorderPath(
-                                        string(outputDirectory, "BORDERS"), nx, ny, nz)
+    string(outputDirectory, "BORDERS"), nx, ny, nz)
 
   # Starting images conversion and border computation
-  info("Starting images conversion")
-  startImageConversion(inputDirectory, bestImage, outputDirectory, borderFilename,
+  startImageConversion(inputDirectory, outputDirectory, borderFilename,
                        imageHeight, imageWidth, imageDepth,
                        nx, ny, nz,
-                       numberOfClusters, parallelMerge)
+                       parallelMerge)
 
 end
 
@@ -50,8 +48,7 @@ end
 function iterateOnBlocks(inputDirectory,
                          imageHeight, imageWidth, imageDepth,
                          imageDx, imageDy, imageDz,
-                         processFunction, outputDirectory,
-                         centroidsCalc, boundaryMat)
+                         processFunction)
   """
   Simple function that iterates on blocks for executing
   a task described by a processFunction
@@ -60,9 +57,6 @@ function iterateOnBlocks(inputDirectory,
   imageHeight, imageWidth, imageDepth: Images sizes
   imageDx, imageDy, imageDz: Sizes of cells grid
   processFunction: Function that will be executed on a separate task
-  outputDirectory: Directory which will contains the output
-  centroidsCalc: Centroids from the best image
-  boundaryMat: Boundary operator for the chosen grid
   """
 
   beginImageStack = 0
@@ -78,9 +72,7 @@ function iterateOnBlocks(inputDirectory,
                                       xBlock, yBlock,
                                       startImage, endImage,
                                       imageDx, imageDy,
-                                      imageWidth, imageHeight,
-                                      outputDirectory,
-                                      centroidsCalc, boundaryMat)
+                                      imageWidth, imageHeight)
         push!(tasks, task)
       end
     end
@@ -96,7 +88,7 @@ function pixelsToVoxels(sliceDirectory,
                         imageHeight, imageWidth, imageDepth,
                         imageDx, imageDy, imageDz,
                         outputDirectory,
-                        centroidsCalc, boundaryMat)
+                        boundaryMat)
   """
   Function for conversion of pixels into voxels. It is different
   from iterateOnBlocks because it needs a different distribution
@@ -114,7 +106,7 @@ function pixelsToVoxels(sliceDirectory,
                                          imageDx, imageDy,
                                          imageWidth, imageHeight,
                                          outputDirectory,
-                                         centroidsCalc, boundaryMat)
+                                         boundaryMat)
     push!(tasks, task)
   end
 
@@ -124,23 +116,15 @@ function pixelsToVoxels(sliceDirectory,
   end
 end 
 
-function startImageConversion(sliceDirectory, bestImage, outputDirectory, borderFilename,
+function startImageConversion(sliceDirectory, outputDirectory, borderFilename,
                               imageHeight, imageWidth, imageDepth,
                               imageDx, imageDy, imageDz,
-                              numberOfClusters, parallelMerge)
+                              parallelMerge)
   """
   Support function for converting a stack of images into a model
 
   sliceDirectory: directory containing the image stack
-  imageForCentroids: image chosen for centroid computation
   """
-
-  # Create clusters for image segmentation
-  info("Computing image centroids")
-  debug("Best image = ", bestImage)
-  centroidsCalc = PngStack2Array3dJulia.calculateClusterCentroids(sliceDirectory,
-                                          bestImage, numberOfClusters)
-  debug(string("centroids = ", centroidsCalc))
 
   try
     mkdir(string(outputDirectory, "BORDERS"))
@@ -157,21 +141,19 @@ function startImageConversion(sliceDirectory, bestImage, outputDirectory, border
                       imageHeight, imageWidth, imageDepth,
                       imageDx, imageDy, imageDz,
                       outputDirectory,
-                      centroidsCalc, boundaryMat) 
+                      boundaryMat) 
 
   info("Merging boundaries")
 @time iterateOnBlocks(string(outputDirectory, "MODELS"),
                     imageHeight, imageWidth, imageDepth,
                     imageDx, imageDy, imageDz,
-                    mergeBoundariesProcess, None,
-                    None, None) 
+                    mergeBoundariesProcess) 
                   
   info("Merging blocks")
 @time iterateOnBlocks(string(outputDirectory, "MODELS"),
                     imageHeight, imageWidth, imageDepth,
                     imageDx, imageDy, imageDz,
-                    mergeBlocksProcess, None,
-                    None, None) 
+                    mergeBlocksProcess) 
 
   info("Smoothing models")
 @time smoothBlocks(string(outputDirectory, "MODELS"),
@@ -192,19 +174,14 @@ function imageConversionProcess(sliceDirectory,
                               imageDx, imageDy,
                               imageWidth, imageHeight,
                               outputDirectory,
-                              centroids, boundaryMat)
+                              boundaryMat)
   """
   Support function for converting a stack of image on a single
   independent process
   """
 
   theImage = PngStack2Array3dJulia.pngstack2array3d(sliceDirectory,
-                                                  startImage, endImage, centroids)
-
-  centroidsSorted = sort(vec(reshape(centroids, 1, 2)))
-  background = centroidsSorted[1]
-  foreground = centroidsSorted[2]
-  debug(string("background = ", background, " foreground = ", foreground))
+                                                  startImage, endImage)
   
   
   for xBlock in 0:(imageWidth / imageDx - 1)
@@ -229,7 +206,7 @@ function imageConversionProcess(sliceDirectory,
       for z in 1 : imageDz
         for y in 1 : imageDy
           for x in 1 : imageDx
-            if(theImage[z][x + xStart, y + yStart] == foreground)
+            if(theImage[z][x + xStart, y + yStart] == 0xff)
               index = x - 1 + (y - 1) * imageDx + (z - 1) * (imageDx * imageDy)
               push!(chains3D, index)
             end
@@ -298,9 +275,7 @@ function mergeBoundariesProcess(modelDirectory,
                                   xBlock, yBlock,
                                   startImage, endImage,
                                   imageDx, imageDy,
-                                  imageWidth, imageHeight,
-                                  outputDirectory = None,
-                                  centroidsCalc = None, boundaryMat = None)
+                                  imageWidth, imageHeight)
   """
   Helper function for mergeBoundaries.
   It is executed on different processes
@@ -367,9 +342,7 @@ function mergeBlocksProcess(modelDirectory,
                               xBlock, yBlock,
                               startImage, endImage,
                               imageDx, imageDy,
-                              imageWidth, imageHeight,
-                              outputDirectory = None,
-                              centroidsCalc = None, boundaryMat = None)
+                              imageWidth, imageHeight)
   """
   Helper function for mergeBlocks.
   It is executed on different processes
@@ -418,9 +391,7 @@ function smoothBlocksProcess(modelDirectory,
                              xBlock, yBlock,
                              startImage, endImage,
                              imageDx, imageDy,
-                             imageWidth, imageHeight,
-                             outputDirectory = None,
-                             centroidsCalc = None, boundaryMat = None)
+                             imageWidth, imageHeight)
   """
   Smoothes a block in a single process
 
@@ -499,8 +470,7 @@ function smoothBlocks(modelDirectory,
     iterateOnBlocks(modelDirectory,
                     imageHeight, imageWidth, imageDepth,
                     imageDx, imageDy, imageDz,
-                    smoothBlocksProcess,
-                    None, None, None)
+                    smoothBlocksProcess)
 
     # Moving smoothed file for next iterations
 

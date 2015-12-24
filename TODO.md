@@ -10,7 +10,6 @@
 
 ## ImagesConversion
 
-- I need a check for non-existing best images
 - Every process takes a copy of the sparse  boundary matrix, try to use a shared array or something similar to reduce network communications
 - Use a parameter for controlling number of smoothing iterations
 - Study Requires.jl and see if we can use a lazy load for python libraries

@@ -34,7 +34,6 @@ function loadConfiguration(configurationFile)
   end
    
   return configuration["inputDirectory"], configuration["outputDirectory"],
-        configuration["bestImage"],
         configuration["nx"], configuration["ny"], configuration["nz"],
         DEBUG_LEVELS[configuration["DEBUG_LEVEL"]],
         parallelMerge
@@ -118,13 +117,13 @@ function convertImagesToLARModel(configurationFile)
 
   configurationFile: Path of the configuration file
   """
-  inputDirectory, outputDirectory, bestImage, nx, ny, nz,
+  inputDirectory, outputDirectory, nx, ny, nz,
       DEBUG_LEVEL, parallelMerge = loadConfiguration(open(configurationFile))
-  convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
+  convertImagesToLARModel(inputDirectory, outputDirectory,
                         nx, ny, nz, DEBUG_LEVEL, parallelMerge)
 end
 
-function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
+function convertImagesToLARModel(inputDirectory, outputDirectory,
                                  nx, ny, nz, DEBUG_LEVEL = INFO,
                                  parallelMerge = false)
   """
@@ -132,8 +131,7 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
 
   inputDirectory: Directory containing the stack of images
   outputDirectory: Directory containing the output
-  bestImage: Image chosen for centroids computation
-  nx, ny, nz: Border dimensions (Possibly the biggest power of two of images dimensions)
+  nx, ny, nz: Border dimensions
   DEBUG_LEVEL: Debug level for Julia logger. It can be one of the following:
     - DEBUG
     - INFO
@@ -150,7 +148,7 @@ function convertImagesToLARModel(inputDirectory, outputDirectory, bestImage,
   end
 
   Logging.configure(level=DEBUG_LEVEL)
-  ImagesConversion.images2LARModel(nx, ny, nz, bestImage,
+  ImagesConversion.images2LARModel(nx, ny, nz,
           inputDirectory, outputDirectory, parallelMerge)
 end
 
