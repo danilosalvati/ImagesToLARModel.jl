@@ -1824,6 +1824,62 @@ Another function which can be useful for our purposes is conversion between diff
   return sparse(I, J, data)
 end @}
 
+\subsection{Compute the boundary operator}\label{sec:JuliaBoundaryOperator}
+
+@D boundary computation
+@{function cscTranspose(CSCm)
+  """
+  Compute the transpose matrix of a
+  sparse CSC matrix
+  """
+  rows, columns = findn(CSCm)
+  data = nonzeros(CSCm)
+  return sparse(columns, rows, data, size(CSCm)[2], size(CSCm)[1])
+end
+
+function cscBoundaryFilter(CSCm)
+  """
+  Matrix filtering to produce the boundary
+  matrix. It returns only max values for
+  every row
+  
+  CSCm: a matrix in the CSC format
+  """
+  
+  # Now I iterate on all rows of the matrix
+  # saving only the max values on the row in a
+  # new sparse matrix
+  rows = Array(Int, 0)
+  columns = Array(Int, 0)
+  data = Array(Int, 0)
+  for k in 1 : size(CSCm)[1]
+    matrixRow = CSCm[k,:]
+    maxRowValue = maximum(matrixRow)
+    for j in 1: length(matrixRow)
+      if matrixRow[j] == maxRowValue
+        push!(rows, k)
+        push!(columns, j)
+        push!(data, 1)
+      end
+    end
+  end
+  return sparse(rows, columns, data, size(CSCm)[1], size(CSCm)[2])
+end
+
+function boundary(cells, facets)
+  """
+  Take the usual LAR representation of d-cells
+  and (d-1)-facets and returns the
+  boundary operator in csc format
+  
+  cell, facets: d-cells and (d-1)-facets in BRC format
+  """
+  cscCV = relationshipListToCSC(cells)
+  cscFV = relationshipListToCSC(facets)
+  cscFC = cscFV * cscTranspose(cscCV)
+  return cscBoundaryFilter(cscFC)
+end @}
+
 %===============================================================================
 \section{LARUtils}\label{sec:LARUtils}
 %===============================================================================
