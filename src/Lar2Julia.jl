@@ -55,8 +55,7 @@ function cscBinFilter(CSCm)
   end
 
   return CSCm
-end
-
+end 
 
 function cscChainToCellList(CSCm)
   """
@@ -102,4 +101,161 @@ function relationshipListToCSC(larRelation)
 
   return sparse(I, J, data)
 end 
+
+function convexCombination(vectors)
+  """
+  Compute the convex combination of an
+  array of vectors
+
+  vectors: An array of vectors
+  """
+  # Computing sum of all vectors
+  sum = [0.0, 0.0, 0.0]
+  for v in vectors
+    sum += v
+  end
+  return sum/length(vectors)
+end 
+
+function cscTranspose(CSCm)
+  """
+  Compute the transpose matrix of a
+  sparse CSC matrix
+  """
+  rows, columns = findn(CSCm)
+  data = nonzeros(CSCm)
+  return sparse(columns, rows, data, size(CSCm)[2], size(CSCm)[1])
+end 
+
+function cscBoundaryFilter(CSCm)
+  """
+  Matrix filtering to produce the boundary
+  matrix. It returns only max values for
+  every row
+
+  CSCm: a matrix in the CSC format
+  """
+
+  # Now I iterate on all rows of the matrix
+  # saving only the max values on the row in a
+  # new sparse matrix
+  rows = Array(Int, 0)
+  columns = Array(Int, 0)
+  data = Array(Int, 0)
+  for k in 1 : size(CSCm)[1]
+    matrixRow = CSCm[k,:]
+    maxRowValue = maximum(matrixRow)
+    for j in 1: length(matrixRow)
+      if matrixRow[j] == maxRowValue
+        push!(rows, k)
+        push!(columns, j)
+        push!(data, 1)
+      end
+    end
+  end
+  return sparse(rows, columns, data, size(CSCm)[1], size(CSCm)[2])
+end 
+
+function boundary(cells, facets)
+  """
+  Take the usual LAR representation of d-cells
+  and (d-1)-facets and returns the
+  boundary operator in csc format
+
+  cell, facets: d-cells and (d-1)-facets in BRC format
+  """
+  cscCV = relationshipListToCSC(cells)
+  cscFV = relationshipListToCSC(facets)
+  cscFC = cscFV * cscTranspose(cscCV)
+  return cscBoundaryFilter(cscFC)
+end 
+
+function larIncidence(cells, facets)
+  """
+  The incidence operator between cells
+  and facets of a LAR model
+
+  cells, facets: cells and facets BRC representation
+  of a LAR model
+  """
+  # The cell-face incidence operator
+  cscCellFacet = boundary(facets, cells)
+  larCellFacet = Array(Array{Int}, length(cells))
+  rows, columns = findn(cscCellFacet)
+  zipped = zip(rows, columns, nonzeros(cscCellFacet))
+  for (i, j, val) in zipped
+    if val == 1
+      if(!isdefined(larCellFacet, i))
+        larCellFacet[i] = []
+      end
+      append!(larCellFacet[i], collect(j))
+    end
+  end
+  return larCellFacet
+end
+
+function incidenceChain(bases)
+  """
+  Compute the full stack of BRC incidence matrices of
+  a LAR representation for a cellular complex, starting
+  from its list of bases, i.e. from [VV,EV,FV,CV,...]
+
+  bases: bases of a LAR cellular complex
+  """
+  pairsOfBases = zip(bases[2 : end], bases[1 : end - 1])
+  relations = [larIncidence(cells, facets) for (cells,facets) in pairsOfBases]
+  return reverse(relations)
+end 
+
+function signedCellularBoundary(V, bases)
+  """
+  Compute the signed cellular boundary
+  for polytopal complexes
+
+  V: the array of vertices
+  bases: the bases of a LAR model
+  """
+  
+  # First of all I need to convert LAR bases in Julia
+  # 1-based indexing
+  reindexedBases = deepcopy(bases)
+  for i in 1 : length(reindexedBases)
+    for j in 1 : length(reindexedBases[i])
+      for z in 1 : length(reindexedBases[i][j])
+        reindexedBases[i][j][z] += 1
+      end
+    end
+  end
+
+  cscBoundary = boundary(reindexedBases[end], reindexedBases[end - 1])
+  rows, columns = findn(cscBoundary)
+  pairs = map(((x,y) -> return[x, y]), rows, columns)
+  dim = length(reindexedBases) - 1
+  signs = Array(Int, 0)
+  chain = incidenceChain(reindexedBases)
+  for pair in pairs
+    flag = reverse(pair)
+    for k in 1 : dim - 1
+      cell = flag[end]
+      append!(flag, collect(chain[k + 1][cell][2]))
+    end
+        
+    verts = [convexCombination([V[v] for v in reindexedBases[dim - k + 1][flag[k + 1]]])
+             for k in 0 : dim]
+    flagMat = Array(Float64, dim + 1, dim + 1)
+    
+    # verts is useless and can be integrated into this for!!!
+    for j in 1 : dim
+      for i in 1 : dim + 1
+        flagMat[i, j] = verts[i][j]
+        flagMat[i, dim + 1] = 1
+      end
+    end
+    
+    flagSign = sign(det(flagMat))
+    push!(signs, flagSign)
+  end
+  transposedPairs = transpose(pairs)
+  return sparse(map(((x)->return x[1]), pairs), map(((x)->return x[2]), pairs), signs)
+end  
 end
