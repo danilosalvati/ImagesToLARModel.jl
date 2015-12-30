@@ -2,6 +2,8 @@
 
 ## ImagesToLARModel
 
+- Implement a check for grid sizes
+
 ## PngStack2Array3dJulia
 
 ## LARUtils
@@ -15,9 +17,6 @@
 - Study Requires.jl and see if we can use a lazy load for python libraries
 
 ## Lar2Julia
-
-- Convert all python functions inside larcc module into julia functions
-- Delete all old pyplasm functions
 
 ## Model2Obj
 

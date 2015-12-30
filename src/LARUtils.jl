@@ -7,10 +7,10 @@ export ind, invertIndex, getBases, removeDoubleVerticesAndFaces,
 
 
 function ind(x, y, z, nx, ny)
-    """
-    Transform coordinates into linearized matrix indexes
-    """
-    return x + (nx + 1) * (y + (ny + 1) * (z))
+  """
+  Transform coordinates into linearized matrix indexes
+  """
+  return x + (nx + 1) * (y + (ny + 1) * (z))
 end 
 
 function invertIndex(nx,ny,nz)

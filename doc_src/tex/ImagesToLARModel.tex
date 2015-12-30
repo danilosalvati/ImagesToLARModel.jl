@@ -142,7 +142,6 @@ In previous section we have seen how to create a Julia package for distribute ou
  \item \textbf{LARUtils.jl}: it contains utility functions for manipulation of LAR models
  \item \textbf{Smoother.jl}: it contains function for smoothing of LAR models
  \item \textbf{Model2Obj.jl}: it contains function that manipulates obj files
- \item \textbf{larcc.py}: python larcc module for boundary computation. In next releases of the software it will be rewritten in Julia language
 \end{description}
 
 In figure~\ref{fig:architecture} there is a simple schema of dependencies between modules.
@@ -155,9 +154,7 @@ In figure~\ref{fig:architecture} there is a simple schema of dependencies betwee
   \label{fig:architecture}
 \end{figure}
 
-
 Next sections of this document will explain in details all these modules showing also the code involved in conversion
-
 
 %-------------------------------------------------------------------------------
 %===============================================================================
@@ -347,7 +344,6 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
 \end{itemize}
 
 \textit{parallelMerge} is an optional parameter
-
 
 \subsection{Data preparation}\label{sec:dataPreparation}
 
@@ -1561,24 +1557,15 @@ This module has the responsibility for the generation of the border matrix opera
 These are modules needed for this part of the package and the public functions exported
 
 @D modules import GenerateBorderMatrix
-@{import LARUtils
-using PyCall
-
+@{import LARUtils, Lar2Julia
 import JSON
 
 export computeOriented3Border, writeBorder, getOriented3BorderPath, getBorderMatrix
-
-@@pyimport sys
-# Search for python modules in package folder
-unshift!(PyVector(pyimport("sys")["path"]), Pkg.dir("ImagesToLARModel/src"))
-@@pyimport larcc # Importing larcc from local folder
 @}
-
-We can notice some lines for importing \texttt{larcc} python library, which will be used in subsection~\ref{sec:transformBorder}
 
 \subsection{Get border matrix from file}\label{sec:getBorderMatrix}
 
-As we have already seen in previous sections, we need to compute boundaries for every block of the model grid. This can be done using the topological boundary operator from LAR package. However, the resulting matrix depends only on grid sizes; so it could be reused for other models. Consequently first time we need a border operator we compute it and then save it on disk for next conversions. This function does that work searching for a file containing the border and, if it does not exist, calculate and save it: 
+As we have already seen in previous sections, we need to compute boundaries for every block of the model grid. This can be done using the topological boundary operator from LAR package (which has been ported into Julia as we can see in Section~\ref{sec:JuliaBoundaryOperator}). However, the resulting matrix depends only on grid sizes; so it could be reused for other models. Consequently first time we need a border operator we compute it and then save it on disk for next conversions. This function does that work searching for a file containing the border and, if it does not exist, calculate and save it: 
 
 @D get Border matrix
 @{function getOriented3BorderPath(borderPath, nx, ny, nz)
@@ -1601,7 +1588,7 @@ end @}
 
 \subsection{Write border matrix on file}\label{sec:writeBorderMatrix}
 
-We have already seen that for performance reasons border operator matrix is saved on file; here we will see code used for this scope. Firstly, we have defined a function \texttt{writeBorder}, which takes as parameters a \texttt{PyObject} containing a matrix (computed in subsection~\ref{sec:computeBorder}) and the output file path. When porting of \texttt{larcc} library will be completed, code for conversion of python csr matrix into csc julia matrix will not be necessary.
+We have already seen that for performance reasons border operator matrix is saved on file; here we will see code used for this scope. Firstly, we have defined a function \texttt{writeBorder}, which takes as parameters the border matrix (computed in subsection~\ref{sec:computeBorder}) and the output file path. 
 
 @D write Border matrix
 @{function writeBorder(boundaryMatrix, outputFile)
@@ -1612,11 +1599,9 @@ We have already seen that for performance reasons border operator matrix is save
   outputFile: path of the outputFile
   """
 
-  fullBorder = pycall(boundaryMatrix["toarray"], PyAny)
-  cscBorder = sparse(fullBorder)
-  row = findn(cscBorder)[1]
-  col = findn(cscBorder)[2]
-  data = nonzeros(cscBorder)
+  row = findn(boundaryMatrix)[1]
+  col = findn(boundaryMatrix)[2]
+  data = nonzeros(boundaryMatrix)
 
   matrixObj = MatrixObject(0, 0, row, col, data)
 
@@ -1640,19 +1625,16 @@ The most important fields of this object are the last three ones; the first two 
 
 \subsection{Compute border matrix}\label{sec:computeBorder}
 
-Here we can see code used for computation of the border operator. As we can see, we call the python \texttt{larcc} module, from the LAR module, which returns a \texttt{PyObject} containing a \textit{sparse csr matrix}. In next versions this function will be probably changed and the code for boundary computation will be moved in \texttt{LAR2Julia} module (also transforming all csr matrix in csc matrix) avoiding python calls.
+Here we can see code used for computation of the border operator, which calls the functions in \texttt{Lar2Julia} module.
 
 @D compute border matrix
 @{# Compute the 3-border operator
 function computeOriented3Border(nx, ny, nz)
   """
-  Compute the 3-border matrix using a modified
-  version of larcc
+  Compute the 3-border matrix
   """
   V, bases = LARUtils.getBases(nx, ny, nz)
-  boundaryMat = larcc.signedCellularBoundary(V, bases)
-  return boundaryMat
-
+  return Lar2Julia.signedCellularBoundary(V, bases)
 end @}
 
 \subsection{Transform border matrix}\label{sec:transformBorder}
@@ -1759,8 +1741,7 @@ function cscBinFilter(CSCm)
   end
 
   return CSCm
-end
-@}
+end @}
 
 \subsection{Get oriented cells from a chain}\label{sec:getCellsFromChain}
 
@@ -1824,6 +1805,192 @@ Another function which can be useful for our purposes is conversion between diff
   return sparse(I, J, data)
 end @}
 
+\subsection{Compute the boundary operator}\label{sec:JuliaBoundaryOperator}
+Here we see how to compute the boundary operator using topological algebra.
+First of all we need two helper functions for computation of convex combination of an array of vectors and for transposition of Julia sparse matrix.
+
+@D convex combination of an array of vectors
+@{function convexCombination(vectors)
+  """
+  Compute the convex combination of an
+  array of vectors
+
+  vectors: An array of vectors
+  """
+  # Computing sum of all vectors
+  sum = [0.0, 0.0, 0.0]
+  for v in vectors
+    sum += v
+  end
+  return sum/length(vectors)
+end @}
+
+@D sparse matrix transposition
+@{function cscTranspose(CSCm)
+  """
+  Compute the transpose matrix of a
+  sparse CSC matrix
+  """
+  rows, columns = findn(CSCm)
+  data = nonzeros(CSCm)
+  return sparse(columns, rows, data, size(CSCm)[2], size(CSCm)[1])
+end @}
+
+Now we can see how to compute the simple \textit{boundary} operator (without orientation) for the array of \textit{cells} and \textit{facets} of our model. According to this algorithm, we should just compute the sparse matrix representation of the cells and facets multiply the latter with the transposed of the first. Finally we have to maintain only the max values for every row returning a matrix with only ones and zeros.
+
+@D non-oriented boundary
+@{function boundary(cells, facets)
+  """
+  Take the usual LAR representation of d-cells
+  and (d-1)-facets and returns the
+  boundary operator in csc format
+
+  cell, facets: d-cells and (d-1)-facets in BRC format
+  """
+  cscCV = relationshipListToCSC(cells)
+  cscFV = relationshipListToCSC(facets)
+  cscFC = cscFV * cscTranspose(cscCV)
+  return cscBoundaryFilter(cscFC)
+end @}
+
+@D boundary filter
+@{function cscBoundaryFilter(CSCm)
+  """
+  Matrix filtering to produce the boundary
+  matrix. It returns only max values for
+  every row
+
+  CSCm: a matrix in the CSC format
+  """
+
+  # Now I iterate on all rows of the matrix
+  # saving only the max values on the row in a
+  # new sparse matrix
+  rows = Array(Int, 0)
+  columns = Array(Int, 0)
+  data = Array(Int, 0)
+  for k in 1 : size(CSCm)[1]
+    matrixRow = CSCm[k,:]
+    maxRowValue = maximum(matrixRow)
+    for j in 1: length(matrixRow)
+      if matrixRow[j] == maxRowValue
+        push!(rows, k)
+        push!(columns, j)
+        push!(data, 1)
+      end
+    end
+  end
+  return sparse(rows, columns, data, size(CSCm)[1], size(CSCm)[2])
+end @}
+
+Now we can compute the \textit{oriented boundary operator}, which returns a sparse matrix with values in the Abelian group \{-1, 0, 1\}
+
+@D oriented boundary operator
+@{function signedCellularBoundary(V, bases)
+  """
+  Compute the signed cellular boundary
+  for polytopal complexes
+
+  V: the array of vertices
+  bases: the bases of a LAR model
+  """
+  
+  # First of all I need to convert LAR bases in Julia
+  # 1-based indexing
+  reindexedBases = deepcopy(bases)
+  for i in 1 : length(reindexedBases)
+    for j in 1 : length(reindexedBases[i])
+      for z in 1 : length(reindexedBases[i][j])
+        reindexedBases[i][j][z] += 1
+      end
+    end
+  end
+
+  cscBoundary = boundary(reindexedBases[end], reindexedBases[end - 1])
+  rows, columns = findn(cscBoundary)
+  pairs = map(((x,y) -> return[x, y]), rows, columns)
+  dim = length(reindexedBases) - 1
+  signs = Array(Int, 0)
+  chain = incidenceChain(reindexedBases)
+  for pair in pairs
+    flag = reverse(pair)
+    for k in 1 : dim - 1
+      cell = flag[end]
+      append!(flag, collect(chain[k + 1][cell][2]))
+    end
+        
+    verts = [convexCombination([V[v] for v in reindexedBases[dim - k + 1][flag[k + 1]]])
+	     for k in 0 : dim]
+    flagMat = Array(Float64, dim + 1, dim + 1)
+    
+    # verts is useless and can be integrated into this for!!!
+    for j in 1 : dim
+      for i in 1 : dim + 1
+        flagMat[i, j] = verts[i][j]
+        flagMat[i, dim + 1] = 1
+      end
+    end
+    
+    flagSign = sign(det(flagMat))
+    push!(signs, flagSign)
+  end
+  transposedPairs = transpose(pairs)
+  return sparse(map(((x)->return x[1]), pairs), map(((x)->return x[2]), pairs), signs)
+end @}
+
+As we can see, we also need an incidence operator between cells and facets
+
+@D incidence operator
+@{function larIncidence(cells, facets)
+  """
+  The incidence operator between cells
+  and facets of a LAR model
+
+  cells, facets: cells and facets BRC representation
+  of a LAR model
+  """
+  # The cell-face incidence operator
+  cscCellFacet = boundary(facets, cells)
+  larCellFacet = Array(Array{Int}, length(cells))
+  rows, columns = findn(cscCellFacet)
+  zipped = zip(rows, columns, nonzeros(cscCellFacet))
+  for (i, j, val) in zipped
+    if val == 1
+      if(!isdefined(larCellFacet, i))
+        larCellFacet[i] = []
+      end
+      append!(larCellFacet[i], collect(j))
+    end
+  end
+  return larCellFacet
+end
+
+function incidenceChain(bases)
+  """
+  Compute the full stack of BRC incidence matrices of
+  a LAR representation for a cellular complex, starting
+  from its list of bases, i.e. from [VV,EV,FV,CV,...]
+
+  bases: bases of a LAR cellular complex
+  """
+  pairsOfBases = zip(bases[2 : end], bases[1 : end - 1])
+  relations = [larIncidence(cells, facets) for (cells,facets) in pairsOfBases]
+  return reverse(relations)
+end @}
+
+@D boundary computation
+@{@< convex combination of an array of vectors @>
+
+@< sparse matrix transposition @>
+
+@< boundary filter @>
+
+@< non-oriented boundary @>
+
+@< incidence operator @>
+
+@< oriented boundary operator @> @}
+
 %===============================================================================
 \section{LARUtils}\label{sec:LARUtils}
 %===============================================================================
@@ -1847,10 +2014,10 @@ First utility functions we will see, transform a matrix into an array and vice v
 
 @D conversion from matrix to array
 @{function ind(x, y, z, nx, ny)
-    """
-    Transform coordinates into linearized matrix indexes
-    """
-    return x + (nx + 1) * (y + (ny + 1) * (z))
+  """
+  Transform coordinates into linearized matrix indexes
+  """
+  return x + (nx + 1) * (y + (ny + 1) * (z))
 end @}
 
 Here we have defined also the inverse transformation from the array to the matrix, which is useful for obtaining vertices coordinates from a cell
@@ -3072,6 +3239,8 @@ end
 @< get oriented cells from a chain @>
 
 @< transform relationships to csc @>
+
+@< boundary computation @>
 end
 @}
 
