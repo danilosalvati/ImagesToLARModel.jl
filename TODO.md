@@ -18,6 +18,8 @@
 
 ## Lar2Julia
 
+- The functions for the boundary computation need to be parallelized
+
 ## Model2Obj
 
 ## Smoother

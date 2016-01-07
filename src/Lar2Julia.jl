@@ -142,13 +142,21 @@ function cscBoundaryFilter(CSCm)
   rows = Array(Int, 0)
   columns = Array(Int, 0)
   data = Array(Int, 0)
-  for k in 1 : size(CSCm)[1]
-    matrixRow = CSCm[k,:]
-    maxRowValue = maximum(matrixRow)
-    for j in 1: length(matrixRow)
-      if matrixRow[j] == maxRowValue
+  
+  # I need to compute the transposed matrix
+  # for improving performances. In fact Julia
+  # use only column-stored arrays so it is
+  # inefficient to iterate over rows
+  transCSCm = cscTranspose(CSCm)
+
+  for k in 1 : size(transCSCm)[2]
+    matrixColumn = transCSCm[:, k]
+    maxColumnValue = maximum(matrixColumn)
+    rowIndices, _ = findn(matrixColumn)
+    for rowIndex in rowIndices
+      if transCSCm[rowIndex, k] == maxColumnValue
         push!(rows, k)
-        push!(columns, j)
+        push!(columns, rowIndex)
         push!(data, 1)
       end
     end
