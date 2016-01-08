@@ -189,14 +189,17 @@ function larIncidence(cells, facets)
   # The cell-face incidence operator
   cscCellFacet = boundary(facets, cells)
   larCellFacet = Array(Array{Int}, length(cells))
-  rows, columns = findn(cscCellFacet)
-  zipped = zip(rows, columns, nonzeros(cscCellFacet))
-  for (i, j, val) in zipped
-    if val == 1
-      if(!isdefined(larCellFacet, i))
-        larCellFacet[i] = []
+  
+  # Using a transposed matrix for caching exploitation
+  transCscCellFacet = cscTranspose(cscCellFacet)
+  columns, rows = findn(transCscCellFacet)
+  data = nonzeros(transCscCellFacet)
+  for i in 1 : length(data)
+    if data[i] == 1
+      if(!isdefined(larCellFacet, rows[i]))
+        larCellFacet[rows[i]] = []
       end
-      append!(larCellFacet[i], collect(j))
+      append!(larCellFacet[rows[i]], collect(columns[i]))
     end
   end
   return larCellFacet
@@ -211,7 +214,17 @@ function incidenceChain(bases)
   bases: bases of a LAR cellular complex
   """
   pairsOfBases = zip(bases[2 : end], bases[1 : end - 1])
-  relations = [larIncidence(cells, facets) for (cells,facets) in pairsOfBases]
+  relations = Array(Array{Array{Int}}, 0)
+  tasks = Array(RemoteRef, 0)
+  for (cells, facets) in pairsOfBases
+    task = @spawn larIncidence(cells, facets)
+    push!(tasks, task)
+  end
+
+  for task in tasks
+    push!(relations, fetch(task))
+  end
+
   return reverse(relations)
 end 
 
@@ -222,44 +235,52 @@ function signedCellularBoundary(V, bases)
 
   V: the array of vertices
   bases: the bases of a LAR model
-  """
   
+  Warning: At the end of this function the bases arrays
+  will be modified for performance reasons
+  """
   # First of all I need to convert LAR bases in Julia
   # 1-based indexing
-  reindexedBases = deepcopy(bases)
-  for i in 1 : length(reindexedBases)
-    for j in 1 : length(reindexedBases[i])
-      for z in 1 : length(reindexedBases[i][j])
-        reindexedBases[i][j][z] += 1
+
+  for i in 1 : length(bases)
+    for j in 1 : length(bases[i])
+      for z in 1 : length(bases[i][j])
+        bases[i][j][z] += 1 # This will change the reference to bases arrays!!
       end
     end
   end
 
-  cscBoundary = boundary(reindexedBases[end], reindexedBases[end - 1])
+  cscBoundary = boundary(bases[end], bases[end - 1])
   rows, columns = findn(cscBoundary)
   pairs = map(((x,y) -> return[x, y]), rows, columns)
-  dim = length(reindexedBases) - 1
+  dim = length(bases) - 1
   signs = Array(Int, 0)
-  chain = incidenceChain(reindexedBases)
+  chain = incidenceChain(bases)
+
   for pair in pairs
     flag = reverse(pair)
     for k in 1 : dim - 1
       cell = flag[end]
       append!(flag, collect(chain[k + 1][cell][2]))
     end
-        
-    verts = [convexCombination([V[v] for v in reindexedBases[dim - k + 1][flag[k + 1]]])
-             for k in 0 : dim]
+    
     flagMat = Array(Float64, dim + 1, dim + 1)
     
-    # verts is useless and can be integrated into this for!!!
-    for j in 1 : dim
-      for i in 1 : dim + 1
-        flagMat[i, j] = verts[i][j]
-        flagMat[i, dim + 1] = 1
+    for k in 0 : dim
+      vertices = Array(Array{Int}, 0)
+      for v in bases[dim - k + 1][flag[k + 1]]
+        push!(vertices, V[v])
       end
+      vert = convexCombination(vertices)
+      for j in 1 : dim
+        flagMat[j, k + 1] = vert[j]
+      end
+      flagMat[dim + 1, k + 1] = 1
     end
     
+    # I have used a transposed flagMat to better
+    # exploit caching, now I can use the right version
+    flagMat = transpose(flagMat)
     flagSign = sign(det(flagMat))
     push!(signs, flagSign)
   end
