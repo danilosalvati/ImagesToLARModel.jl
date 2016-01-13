@@ -197,6 +197,8 @@ Data preparation (see Section~\ref{sec:dataPreparation} takes several parameters
  \item crop: Parameter for images resizing (they can be extended or cropped)
  \item noise\_shape: Intensity of the denoising filter for images (0 if you want to disable it)
  \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white. If threshold is not specified, segmentation will be done using a clustering algorithm
+ \item threshold3d: set a threshold for the three-dimensional filter (see Section~\ref{sec:3dfilter})
+ \item zDim: set the stack dimension for the three-dimensional filter (see Section~\ref{sec:3dfilter})
 \end{itemize}
 
 Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
@@ -230,8 +232,21 @@ Because of their number it has been realized a function for simply loading them 
   catch
   end
   
+  threshold3d = 0
+  try
+    threshold = configuration["threshold3d"]
+  catch
+  end
+  
+  zDim = 0
+  try
+    threshold = configuration["zDim"]
+  catch
+  end
+
+  
   return configuration["inputDirectory"], configuration["outputDirectory"],
-        crop, noise_shape, threshold
+        crop, noise_shape, threshold, threshold3d, zDim
 
 end
 @}
@@ -246,6 +261,10 @@ A valid JSON file has the following structure:
 filter (0 if you want to disable denoising)\\
 \>  ``threshold": set a threshold for raw data. Pixels under that threshold \\
 will be set to black, otherwise they will be set to white\\
+\>  ``threshold3d": A number indicating the chosen threshold for the \\
+three-dimensional filter (0 if you want to disable this filter) \\
+\>  ``zDim": A number indicating the number of images computed \\
+at once from the three-dimensional filter (0 if you want to take the entire stack)
 \}\\
 \end{tabbing}
 
@@ -257,11 +276,13 @@ For example, we can write:
 \>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
 \>  ``crop": [[1,800],[1,600],[1,50]],\\
 \>  ``noise\_shape": 0,\\
-\>  ``threshold": 13\\
+\>  ``threshold": 13,\\
+\>  ``threshold3d": 100,\\
+\>  ``zDim": 0\\
 \}\\
 \end{tabbing}
 
-\textit{crop}, \textit{noise\_shape}, and \textit{threshold} are optional parameters
+\textit{crop}, \textit{noise\_shape}, \textit{threshold}, \textit{threshold3d} and \textit{zDim} are optional parameters
 
 \subsection{Input loading for images conversion}\label{sec:input}
 
@@ -356,9 +377,11 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
   configurationFile: Path of the configuration file
   """
   inputPath, outputPath, crop,
-	  noise_shape, threshold = loadConfigurationPrepareData(open(configurationFile))
+	  noise_shape, threshold,
+	  threshold3d, zDim = loadConfigurationPrepareData(open(configurationFile))
 
-  prepareData(inputPath, outputPath, crop, noise_shape, threshold)
+  prepareData(inputPath, outputPath, crop, noise_shape, 
+	      threshold, threshold3d, zDim)
       
 end
 @}
@@ -377,6 +400,10 @@ end
   noise_shape: The shape for image denoising
   threshold: Threshold for the raw data. All pixels under it
              will we set to black, otherwise they will be set to white
+  threshold3d: A number indicating the chosen threshold for
+	       three-dimensional filter (0 if you want to disable this filter)
+  zDim: A number indicating the number of images computed at once from the
+	three-dimensional filter (0 if you want to take the entire stack)
   """
   # Create output directory
   try
@@ -384,7 +411,8 @@ end
   catch
   end
 
-  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape, threshold)
+  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape,
+				      threshold, threshold3d, zDim)
 end
 @}
 
@@ -472,6 +500,8 @@ Conversion needs the following parameters:
  \item outputPath: path where we will save png images
  \item crop: parameters for images resizing (they can be extended or cropped)
  \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white. If the threshold is not set, the image will be converted using a clustering algorithm
+ \item threshold3d: Set a threshold for the three-dimensional filter (see Section~\ref{sec:3dfilter})
+ \item zDim: Set the stack dimension for the three-dimensional filter (see Section~\ref{sec:3dfilter})
 \end{itemize}
 
 Now we can examine single parts of conversion process. We need to open the single image doing the following operations:
@@ -528,7 +558,7 @@ else
 end
 gray_img = grayim(imArray) @}
 
-The code used for image clustering will be explained in Section~\ref{sec:imageClustering}. 
+The code used for image clustering will be explained in Section~\ref{sec:imageClustering}. \\
 
 After these operations we can write the single image on disk. However, the stack computed at the moment, could have non-relevant pixels for our model (especially if there is a lot of noise in images). So to speed-up next computation and produce a final result with better quality we can introduce a \textit{three-dimensional filter} for choosing only the useful pixels for the model. In Section~\ref{sec:3dfilter} we will see the details of the implementation of this filter.
 
@@ -588,7 +618,6 @@ end
    \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
    \label{fig:imageTransformation}
 \end{figure}
-
 
 \subsubsection{Image resizing}\label{sec:imageResize}
 
@@ -3476,7 +3505,9 @@ end
 
 @< modules import PngStack2Array3dJulia @>
 @< image resizing @>
+
 @< image clustering @>
+
 @< 3d model filtering @>
 
 @< Convert to png @>

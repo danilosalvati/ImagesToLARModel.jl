@@ -41,6 +41,7 @@ function resizeImage(image, crop)
   end
   return subim(image, crop[1][1]:crop[1][2], crop[2][1]:crop[2][2])
 end 
+
 function clusterImage(imArray)
   """
   Get a binary representation of an image returning
@@ -78,6 +79,7 @@ function clusterImage(imArray)
   
   return reshape(qnt, imageWidth, imageHeight)  
 end 
+
 function visitFromNode(node, graph, visited)
   """
   Visit a graph starting from a node using a DFS
