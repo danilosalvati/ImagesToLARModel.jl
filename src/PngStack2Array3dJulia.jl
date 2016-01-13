@@ -178,7 +178,7 @@ function imageFilter3D(imageDirectory, threshold, zDim = 0)
 
   numberOfBlocks = convert(Int, trunc(length(imageFiles)/zDim))
   for zBlock in 1: numberOfBlocks
-    imageArray = Array(Array{UInt8,2}, zDim)
+    imageArray = Array(Array{Uint8,2}, zDim)
     endBlock = zBlock * zDim
     startBlock = endBlock - zDim + 1
     blockFiles = imageFiles[startBlock: endBlock]
@@ -276,7 +276,7 @@ function convertImages(inputPath, outputPath,
   end
   # Filtering out non-relevant parts of the model
   if(threshold3d != 0)
-    imageFilter3D(imageDirectory, threshold3d, zDim)
+    imageFilter3D(outputPath, threshold3d, zDim)
   end 
 end
 

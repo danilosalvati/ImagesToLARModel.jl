@@ -70,13 +70,13 @@ function loadConfigurationPrepareData(configurationFile)
   
   threshold3d = 0
   try
-    threshold = configuration["threshold3d"]
+    threshold3d = configuration["threshold3d"]
   catch
   end
   
   zDim = 0
   try
-    threshold = configuration["zDim"]
+    zDim = configuration["zDim"]
   catch
   end
 
@@ -103,7 +103,8 @@ function prepareData(configurationFile)
 end
 
 function prepareData(inputPath, outputPath,
-                       crop = Void, noise_shape = 0, threshold = Void)
+                       crop = Void, noise_shape = 0, threshold = Void,
+                       threshold3d = 0, zDim = 0)
   """
   Prepare the input data converting all files into png
   format with the desired resizing and denoising

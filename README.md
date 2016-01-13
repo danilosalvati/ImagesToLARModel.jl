@@ -29,8 +29,10 @@ This is an example of a valid JSON configuration file:
       "noise_shape": A number which indicates the intensity of the denoising
                      filter (0 if you want to disable denoising),
       "threshold": A number indicating the chosen threshold for data
-      "threshold3d": A number indicating the chosen threshold for three-dimensional filter (0 if you want to disable this filter)
-      "zDim": A number indicating the number of images computed at once from the three-dimensional filter (0 if you want to take the entire stack)
+      "threshold3d": A number indicating the chosen threshold for the
+                     three-dimensional filter (0 if you want to disable this filter)
+      "zDim": A number indicating the number of images computed at once from the
+              three-dimensional filter (0 if you want to take the entire stack)
     }
     
 For example we can write:

@@ -234,13 +234,13 @@ Because of their number it has been realized a function for simply loading them 
   
   threshold3d = 0
   try
-    threshold = configuration["threshold3d"]
+    threshold3d = configuration["threshold3d"]
   catch
   end
   
   zDim = 0
   try
-    threshold = configuration["zDim"]
+    zDim = configuration["zDim"]
   catch
   end
 
@@ -388,7 +388,8 @@ end
 
 @D manual data preparation
 @{function prepareData(inputPath, outputPath,
-		       crop = Void, noise_shape = 0, threshold = Void)
+		       crop = Void, noise_shape = 0, threshold = Void,
+		       threshold3d = 0, zDim = 0)
   """
   Prepare the input data converting all files into png
   format with the desired resizing and denoising
@@ -565,7 +566,7 @@ After these operations we can write the single image on disk. However, the stack
 @D 3D filtering
 @{# Filtering out non-relevant parts of the model
 if(threshold3d != 0)
-  imageFilter3D(imageDirectory, threshold3d, zDim)
+  imageFilter3D(outputPath, threshold3d, zDim)
 end @}
 
 This is the code for the entire function:
@@ -836,7 +837,7 @@ function imageFilter3D(imageDirectory, threshold, zDim = 0)
 
   numberOfBlocks = convert(Int, trunc(length(imageFiles)/zDim))
   for zBlock in 1: numberOfBlocks
-    imageArray = Array(Array{UInt8,2}, zDim)
+    imageArray = Array(Array{Uint8,2}, zDim)
     endBlock = zBlock * zDim
     startBlock = endBlock - zDim + 1
     blockFiles = imageFiles[startBlock: endBlock]
