@@ -816,6 +816,47 @@ function adjacentPixels(imageArray, pixel)
   return adjs
 end
 
+function filter3DProcessFunction(blockFiles, threshold)
+  """
+  Process function for the 3D filter.
+  It takes a single block and processes all files
+  on a single process
+  
+  blockFiles: The array of files for the block computed
+              by this function
+  threshold: The threshold for data filtering
+  """
+  zDim = length(blockFiles)
+  imageArray = Array(Array{Uint8,2}, zDim)
+  for i in 1: zDim
+      img = imread(blockFiles[i])
+      imageArray[i] = raw(img)
+  end
+
+  # Now I can start navigation of the graph determined
+  # by these images
+  visited = Array(Int, 0)
+  nx = size(imageArray[1])[1]
+  ny = size(imageArray[1])[2]
+  for i in 1: (zDim * nx * ny)
+    xPixel, yPixel, zPixel = pixelCoords(i, nx, ny)
+    if imageArray[zPixel][xPixel, yPixel]!= 0x00 && !in(i, visited)
+      visitedPixels = visitFromNode(i, imageArray, visited)
+      if length(visitedPixels) < threshold
+        for pixel in visitedPixels
+          x, y, z = pixelCoords(pixel, nx, ny)
+          imageArray[z][x, y] = 0x00
+        end
+      end
+    end
+  end
+  
+  # Now I can write the results on file
+  for i in 1: zDim
+    imwrite(grayim(imageArray[i]), blockFiles[i])
+  end
+end
+
 function imageFilter3D(imageDirectory, threshold, zDim = 0)
   """
   Implementation of a filter for a stack of images
@@ -834,39 +875,24 @@ function imageFilter3D(imageDirectory, threshold, zDim = 0)
   if zDim == 0
     zDim = length(imageFiles)
   end
-
+  
   numberOfBlocks = convert(Int, trunc(length(imageFiles)/zDim))
-  for zBlock in 1: numberOfBlocks
-    imageArray = Array(Array{Uint8,2}, zDim)
-    endBlock = min(zBlock * zDim, length(imageFiles))
-    startBlock = endBlock - zDim + 1
-    blockFiles = imageFiles[startBlock: endBlock]
-    for i in 1: zDim
-      img = imread(blockFiles[i])
-      imageArray[i] = raw(img)
-    end
 
-    # Now I can start navigation of the graph determined
-    # by these images
-    visited = Array(Int, 0)
-    nx = size(imageArray[1])[1]
-    ny = size(imageArray[1])[2]
-    for i in 1: (zDim * nx * ny)
-      xPixel, yPixel, zPixel = pixelCoords(i, nx, ny)
-      if imageArray[zPixel][xPixel, yPixel]!= 0x00 && !in(i, visited)
-        visitedPixels = visitFromNode(i, imageArray, visited)
-        if length(visitedPixels) < threshold
-          for pixel in visitedPixels
-            x, y, z = pixelCoords(pixel, nx, ny)
-            imageArray[z][x, y] = 0x00
-          end
-        end
-      end
-    end
-    # Now I can write the results on file
-    for i in 1: zDim
-      imwrite(grayim(imageArray[i]), blockFiles[i])
-    end
+  if length(imageFiles) % zDim != 0
+    numberOfBlocks += 1
+  end
+  
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 1: numberOfBlocks
+    endBlock = min(zBlock * zDim, length(imageFiles))
+    startBlock = (zBlock - 1) * zDim + 1
+    blockFiles = imageFiles[startBlock: endBlock]
+    task = @@spawn filter3DProcessFunction(blockFiles, threshold)
+    push!(tasks, task)
+  end
+  # Waiting for task completion
+  for task in tasks
+    wait(task)
   end
 end @}
 
