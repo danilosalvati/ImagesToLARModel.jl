@@ -179,7 +179,7 @@ function imageFilter3D(imageDirectory, threshold, zDim = 0)
   numberOfBlocks = convert(Int, trunc(length(imageFiles)/zDim))
   for zBlock in 1: numberOfBlocks
     imageArray = Array(Array{Uint8,2}, zDim)
-    endBlock = zBlock * zDim
+    endBlock = min(zBlock * zDim, length(imageFiles))
     startBlock = endBlock - zDim + 1
     blockFiles = imageFiles[startBlock: endBlock]
     for i in 1: zDim
@@ -241,8 +241,8 @@ function convertImages(inputPath, outputPath,
       for i in 1 : crop[3][2] - numberOfImages
         imArray = zeros(Uint8, imageWidth, imageHeight)
         img = grayim(imArray)
-        outputFilename = string(outputPath, "/", imageFiles[end][1:rsearch(imageFiles[end], ".")[1]],
-                                "-added-", i ,".png")
+        outputFilename = string(outputPath, "/", imageFiles[end][1:rsearch(imageFiles[end], ".")[1] - 1],
+                                "_added-", i ,".png")
         imwrite(img, outputFilename)
       end 
     end
