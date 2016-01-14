@@ -736,7 +736,7 @@ We can see that sometimes the \texttt{Clustering.jl} library returns the same va
 
 Now we can see the implementation of a filter for removal of noise from our models.
 It is different from filters used in common image processing because it effectively removes only groups of linked pixels whose dimensions are under a given threshold. So this filter is able to consider the three-dimensional model described in our images to delete the non-relevant pixels.
-The main idea behind this filter is very simple. We assume that big groups of pixels which are directly linked are interesting for the final model; so we just need to navigate pixels (as they were nodes in a graph) that are adjacent and filter out only groups under the threshold at the end of the visit. So we first need a simple function for a DFS of a graph:
+The main idea behind this filter is very simple. We assume that big groups of pixels which are directly linked are interesting for the final model; so we just need to navigate pixels (as they were nodes in a graph) that are adjacent and filter out only groups under the threshold at the end of the visit. We first need a simple function for a DFS of a graph:
 
 @D DFS function
 @{function visitFromNode(node, graph, visited)
@@ -773,6 +773,14 @@ This is a function valid for every type of graph. What can change from an applic
 \end{itemize}
 }
 \end{quotation}
+
+\begin{figure}[htb]
+  \begin{center}
+    \includegraphics[width=0.60\linewidth]{images/PixelAdjacency.png}
+  \end{center}
+  \caption{Adjacency relationship for pixels. (a) A 2D view of the relationship. (b) A 3D view of the relationship (where the z-axis is determined by previous and next pictures in the array stack}
+  \label{fig:architecture}
+\end{figure}
 
 This is the function that implements the algorithm we have seen above
 
@@ -831,6 +839,14 @@ end @}
   return xCoord, yCoord, zCoord
 end @}
 
+\begin{figure}[htb]
+  \begin{center}
+    \includegraphics[width=0.25\linewidth]{images/PixelIndexing.png}
+  \end{center}
+  \caption{Enumerating schema used for pixel indexing.}
+  \label{fig:architecture}
+\end{figure}
+
 Now we can examine the main function for this filter. First of all, to reduce the quantity of memory involved in the process we must divide the number of images computed at once by a single process using a parameter called \texttt{zDim}. After block division we can start the function that will be executed on every process on the images of a single block. This is the code:
 
 @D 3D model filtering main function
@@ -873,7 +889,7 @@ Now we can examine the main function for this filter. First of all, to reduce th
   end
 end @}
 
-Finally we can see the function executed in every process for images filtering. We just need to iterate on all pixels of the stack of images that are full and that have not been visited yet and start the DFS visit obtaining the list of visited pixels. If its length is less than the \texttt{threshold} parameter we set all those pixels to zero. After all pixels have been visited we can write the images on disk
+Finally we can see the function executed in every process for images filtering. We just need to iterate on all pixels of the stack of images that are full and that have not been visited yet and start the DFS visit obtaining the list of visited pixels. If its length is less than the \texttt{threshold} parameter we set all those pixels to zero. After all pixels have been visited we can write the resulting images on disk
 
 @D process function for 3D filter
 @{function filter3DProcessFunction(blockFiles, threshold)
