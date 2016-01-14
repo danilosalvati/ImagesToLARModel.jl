@@ -13,6 +13,7 @@
 
 ## ImagesConversion
 
+- Move the creation of models directory outside the loop
 - Block merge step and smoothing step could be merged together? (and model compression?)
 - Every process takes a copy of the sparse  boundary matrix, try to use a shared array or something similar to reduce network communications
 - Use a parameter for controlling number of smoothing iterations

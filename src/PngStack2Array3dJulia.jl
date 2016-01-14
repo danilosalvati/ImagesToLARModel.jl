@@ -103,7 +103,7 @@ function visitFromNode(node, graph, visited)
     end
   end
   return visitedNodes
-end
+end 
 
 function pixelIndex(x, y, z, nx, ny)
   """
@@ -112,7 +112,7 @@ function pixelIndex(x, y, z, nx, ny)
   of the linearized matrix
   """
   return x + nx * (y - 1) + nx * ny * (z - 1)
-end
+end 
 
 function pixelCoords(ind, nx, ny)
   """
@@ -121,13 +121,11 @@ function pixelCoords(ind, nx, ny)
   """
 
   xCoord = (ind - 1) % nx + 1
-
   yCoord = convert(Int, trunc((ind - 1) % (nx * ny)/ nx)) + 1
-
   zCoord = convert(Int, trunc((ind - 1) / (nx * ny))) + 1
 
   return xCoord, yCoord, zCoord
-end
+end 
 
 function adjacentPixels(imageArray, pixel)
   """
@@ -155,7 +153,7 @@ function adjacentPixels(imageArray, pixel)
     end
   end
   return adjs
-end
+end 
 
 function filter3DProcessFunction(blockFiles, threshold)
   """
@@ -196,7 +194,7 @@ function filter3DProcessFunction(blockFiles, threshold)
   for i in 1: zDim
     imwrite(grayim(imageArray[i]), blockFiles[i])
   end
-end
+end 
 
 function imageFilter3D(imageDirectory, threshold, zDim = 0)
   """
@@ -235,7 +233,7 @@ function imageFilter3D(imageDirectory, threshold, zDim = 0)
   for task in tasks
     wait(task)
   end
-end 
+end  
 
 function convertImages(inputPath, outputPath,
                        crop = Void, noise_shape_detect = 0, threshold = Void,
