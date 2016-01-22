@@ -80,12 +80,13 @@ function clusterImage(imArray)
   return reshape(qnt, imageWidth, imageHeight)  
 end 
 
-function visitFromNode(node, graph, visited)
+function visitFromNode(node, adjacentRel, visited)
   """
   Visit a graph starting from a node using a DFS
 
   node: the starting node
-  graph: the matrix representation of the graph
+  adjacentRel: a list where in position i there are all
+               adjacent nodes to i
   visited: the visited nodes
   """
   toVisit = Array(Int, 0)
@@ -96,7 +97,7 @@ function visitFromNode(node, graph, visited)
     if !in(n, visited)
       push!(visited, n)
       push!(visitedNodes, n)
-      adj_list = adjacentPixels(graph, n)
+      adj_list = adjacentRel[n]
       for adj in adj_list
         push!(toVisit, adj)
       end
@@ -127,42 +128,50 @@ function pixelCoords(ind, nx, ny)
   return xCoord, yCoord, zCoord
 end 
 
-function adjacentPixels(imageArray, pixel)
+function getAdjacentPixels(imageArray)
   """
-  Find the pixels which are adjacent
-  to a given one
+  Find all adjacent pixels in the stack of images
 
-  imageArray: the array containing the image
-  pixel: the index of the pixel we are querying
+  imageArray: the array containing the images
+  
+  Returns a list containing list of adjacent pixels
   """
+  
   nx = size(imageArray[1])[1]
   ny = size(imageArray[1])[2]
-  adjs = Array(Int, 0)
-  xPixel, yPixel, zPixel = pixelCoords(pixel, nx, ny)
-  # Querying adjacent pixels
-  for z in max(1, zPixel - 1) : min(zPixel + 1, length(imageArray))
-    for y in max(1, yPixel - 1) : min(yPixel + 1, nx)
-      for x in max(1, xPixel - 1) : min(xPixel + 1, ny)
-        if(x == xPixel || y == yPixel)
-          index = pixelIndex(x, y, z, nx, ny)
-          if(index != pixel && imageArray[z][x, y] != 0x00)
-          push!(adjs, index)
+  
+  PP = Array(Array{Int}, nx * ny * length(imageArray))
+  for(pixel in 1: (nx * ny * length(imageArray)))
+    PP[pixel] = Array(Int, 0)
+    xPixel, yPixel, zPixel = pixelCoords(pixel, nx, ny)
+    if(imageArray[zPixel][xPixel, yPixel] != 0x00)
+      # Querying adjacent pixels
+      for z in max(1, zPixel - 1) : min(zPixel + 1, length(imageArray))
+        for y in max(1, yPixel - 1) : min(yPixel + 1, nx)
+          for x in max(1, xPixel - 1) : min(xPixel + 1, ny)
+            if(x == xPixel || y == yPixel)
+              index = pixelIndex(x, y, z, nx, ny)
+              if(index != pixel && imageArray[z][x, y] != 0x00)
+                push!(PP[pixel], index)
+              end
+            end
           end
         end
       end
     end
   end
-  return adjs
+  return PP
 end 
 
-function filter3DProcessFunction(blockFiles, threshold)
+function filter3DProcessFunction(blockFiles, startBlock, endBlock, threshold)
   """
   Process function for the 3D filter.
   It takes a single block and processes all files
   on a single process
   
-  blockFiles: The array of files for the block computed
-              by this function
+  blockFiles: The array of files of previous, current and next blocks
+  startBlock: Index of the first file of the current block
+  endBlock: Index of the last file of the current block
   threshold: The threshold for data filtering
   """
   zDim = length(blockFiles)
@@ -177,10 +186,11 @@ function filter3DProcessFunction(blockFiles, threshold)
   visited = Array(Int, 0)
   nx = size(imageArray[1])[1]
   ny = size(imageArray[1])[2]
+  PP = getAdjacentPixels(imageArray)
   for i in 1: (zDim * nx * ny)
     xPixel, yPixel, zPixel = pixelCoords(i, nx, ny)
     if imageArray[zPixel][xPixel, yPixel]!= 0x00 && !in(i, visited)
-      visitedPixels = visitFromNode(i, imageArray, visited)
+      visitedPixels = visitFromNode(i, PP, visited)
       if length(visitedPixels) < threshold
         for pixel in visitedPixels
           x, y, z = pixelCoords(pixel, nx, ny)
@@ -191,7 +201,7 @@ function filter3DProcessFunction(blockFiles, threshold)
   end
   
   # Now I can write the results on file
-  for i in 1: zDim
+  for i in startBlock: endBlock
     imwrite(grayim(imageArray[i]), blockFiles[i])
   end
 end 
@@ -225,9 +235,16 @@ function imageFilter3D(imageDirectory, threshold, zDim = 0)
   for zBlock in 1: numberOfBlocks
     endBlock = min(zBlock * zDim, length(imageFiles))
     startBlock = (zBlock - 1) * zDim + 1
-    blockFiles = imageFiles[startBlock: endBlock]
-    task = @spawn filter3DProcessFunction(blockFiles, threshold)
+    startPrevBlock = max(startBlock - zDim, 1)
+    endNextBlock = min(endBlock + zDim, length(imageFiles))
+    blockFiles = imageFiles[startPrevBlock : endNextBlock]
+    
+    startBlockInd = startBlock - startPrevBlock + 1
+    endBlockInd  = startBlockInd + endBlock - startBlock
+    
+    task = @spawn filter3DProcessFunction(blockFiles, startBlockInd, endBlockInd, threshold)
     push!(tasks, task)
+    
   end
   # Waiting for task completion
   for task in tasks

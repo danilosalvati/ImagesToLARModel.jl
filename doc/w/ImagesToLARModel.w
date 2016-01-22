@@ -739,12 +739,13 @@ It is different from filters used in common image processing because it effectiv
 The main idea behind this filter is very simple. We assume that big groups of pixels which are directly linked are interesting for the final model; so we just need to navigate pixels (as they were nodes in a graph) that are adjacent and filter out only groups under the threshold at the end of the visit. We first need a simple function for a DFS of a graph:
 
 @D DFS function
-@{function visitFromNode(node, graph, visited)
+@{function visitFromNode(node, adjacentRel, visited)
   """
   Visit a graph starting from a node using a DFS
 
   node: the starting node
-  graph: the matrix representation of the graph
+  adjacentRel: a list where in position i there are all
+	       adjacent nodes to i
   visited: the visited nodes
   """
   toVisit = Array(Int, 0)
@@ -755,7 +756,7 @@ The main idea behind this filter is very simple. We assume that big groups of pi
     if !in(n, visited)
       push!(visited, n)
       push!(visitedNodes, n)
-      adj_list = adjacentPixels(graph, n)
+      adj_list = adjacentRel[n]
       for adj in adj_list
         push!(toVisit, adj)
       end
@@ -764,7 +765,7 @@ The main idea behind this filter is very simple. We assume that big groups of pi
   return visitedNodes
 end @}
 
-This is a function valid for every type of graph. What can change from an application to another is the \textit{adjacency condition}. In this case we can see that our function calls the \texttt{adjacentPixels} function, which find all the full pixels which are adjacent to a given one. The relationship of adjacency used in this case is trivial. In fact we assume that:
+This is a function valid for every type of graph. What can change from an application to another is the \textit{adjacency condition}. In this case we can see that our function uses the \texttt{adjacentRel} parameter, which is a list where for every position \textit{i} there are all nodes that are adjacent to \textit{i}. The relationship of adjacency used in this case is trivial. In fact we assume that:
 \begin{quotation}
 \textit{Given a pixel with coordinates (xPixel, yPixel, zPixel) we consider only the following adjacent pixels:
 \begin{itemize}
@@ -785,32 +786,39 @@ This is a function valid for every type of graph. What can change from an applic
 This is the function that implements the algorithm we have seen above
 
 @D find adjacent pixels
-@{function adjacentPixels(imageArray, pixel)
+@{function getAdjacentPixels(imageArray)
   """
-  Find the pixels which are adjacent
-  to a given one
+  Find all adjacent pixels in the stack of images
 
-  imageArray: the array containing the image
-  pixel: the index of the pixel we are querying
+  imageArray: the array containing the images
+  
+  Returns a list containing list of adjacent pixels
   """
+  
   nx = size(imageArray[1])[1]
   ny = size(imageArray[1])[2]
-  adjs = Array(Int, 0)
-  xPixel, yPixel, zPixel = pixelCoords(pixel, nx, ny)
-  # Querying adjacent pixels
-  for z in max(1, zPixel - 1) : min(zPixel + 1, length(imageArray))
-    for y in max(1, yPixel - 1) : min(yPixel + 1, nx)
-      for x in max(1, xPixel - 1) : min(xPixel + 1, ny)
-        if(x == xPixel || y == yPixel)
-          index = pixelIndex(x, y, z, nx, ny)
-          if(index != pixel && imageArray[z][x, y] != 0x00)
-          push!(adjs, index)
+  
+  PP = Array(Array{Int}, nx * ny * length(imageArray))
+  for(pixel in 1: (nx * ny * length(imageArray)))
+    PP[pixel] = Array(Int, 0)
+    xPixel, yPixel, zPixel = pixelCoords(pixel, nx, ny)
+    if(imageArray[zPixel][xPixel, yPixel] != 0x00)
+      # Querying adjacent pixels
+      for z in max(1, zPixel - 1) : min(zPixel + 1, length(imageArray))
+        for y in max(1, yPixel - 1) : min(yPixel + 1, nx)
+          for x in max(1, xPixel - 1) : min(xPixel + 1, ny)
+            if(x == xPixel || y == yPixel)
+              index = pixelIndex(x, y, z, nx, ny)
+              if(index != pixel && imageArray[z][x, y] != 0x00)
+                push!(PP[pixel], index)
+              end
+            end
           end
         end
       end
     end
   end
-  return adjs
+  return PP
 end @}
 
 How we can see, we also need to transform pixel coordinates into an index and vice versa. So we defined the following utility functions:
@@ -847,7 +855,7 @@ end @}
   \label{fig:architecture}
 \end{figure}
 
-Now we can examine the main function for this filter. First of all, to reduce the quantity of memory involved in the process we must divide the number of images computed at once by a single process using a parameter called \texttt{zDim}. After block division we can start the function that will be executed on every process on the images of a single block. This is the code:
+Now we can examine the main function for this filter. First of all, to reduce the quantity of memory involved in the process we must divide the number of images computed at once by a single process using a parameter called \texttt{zDim}. After block division we can start the function that will be executed on every process on the images of the previous, current and next blocks (saving only images for the current one). This is the code:
 
 @D 3D model filtering main function
 @{function imageFilter3D(imageDirectory, threshold, zDim = 0)
@@ -879,9 +887,16 @@ Now we can examine the main function for this filter. First of all, to reduce th
   for zBlock in 1: numberOfBlocks
     endBlock = min(zBlock * zDim, length(imageFiles))
     startBlock = (zBlock - 1) * zDim + 1
-    blockFiles = imageFiles[startBlock: endBlock]
-    task = @@spawn filter3DProcessFunction(blockFiles, threshold)
+    startPrevBlock = max(startBlock - zDim, 1)
+    endNextBlock = min(endBlock + zDim, length(imageFiles))
+    blockFiles = imageFiles[startPrevBlock : endNextBlock]
+    
+    startBlockInd = startBlock - startPrevBlock + 1
+    endBlockInd  = startBlockInd + endBlock - startBlock
+    
+    task = @@spawn filter3DProcessFunction(blockFiles, startBlockInd, endBlockInd, threshold)
     push!(tasks, task)
+    
   end
   # Waiting for task completion
   for task in tasks
@@ -892,14 +907,15 @@ end @}
 Finally we can see the function executed in every process for images filtering. We just need to iterate on all pixels of the stack of images that are full and that have not been visited yet and start the DFS visit obtaining the list of visited pixels. If its length is less than the \texttt{threshold} parameter we set all those pixels to zero. After all pixels have been visited we can write the resulting images on disk
 
 @D process function for 3D filter
-@{function filter3DProcessFunction(blockFiles, threshold)
+@{function filter3DProcessFunction(blockFiles, startBlock, endBlock, threshold)
   """
   Process function for the 3D filter.
   It takes a single block and processes all files
   on a single process
   
-  blockFiles: The array of files for the block computed
-              by this function
+  blockFiles: The array of files of previous, current and next blocks
+  startBlock: Index of the first file of the current block
+  endBlock: Index of the last file of the current block
   threshold: The threshold for data filtering
   """
   zDim = length(blockFiles)
@@ -914,10 +930,11 @@ Finally we can see the function executed in every process for images filtering. 
   visited = Array(Int, 0)
   nx = size(imageArray[1])[1]
   ny = size(imageArray[1])[2]
+  PP = getAdjacentPixels(imageArray)
   for i in 1: (zDim * nx * ny)
     xPixel, yPixel, zPixel = pixelCoords(i, nx, ny)
     if imageArray[zPixel][xPixel, yPixel]!= 0x00 && !in(i, visited)
-      visitedPixels = visitFromNode(i, imageArray, visited)
+      visitedPixels = visitFromNode(i, PP, visited)
       if length(visitedPixels) < threshold
         for pixel in visitedPixels
           x, y, z = pixelCoords(pixel, nx, ny)
@@ -928,7 +945,7 @@ Finally we can see the function executed in every process for images filtering. 
   end
   
   # Now I can write the results on file
-  for i in 1: zDim
+  for i in startBlock: endBlock
     imwrite(grayim(imageArray[i]), blockFiles[i])
   end
 end @}
