@@ -3,6 +3,7 @@
 ## ImagesToLARModel
 
 - Implement a check for grid sizes
+- Implement compression of model
 
 ## PngStack2Array3dJulia
 
@@ -12,13 +13,13 @@
 
 ## ImagesConversion
 
+- Move the creation of models directory outside the loop
+- Block merge step and smoothing step could be merged together? (and model compression?)
 - Every process takes a copy of the sparse  boundary matrix, try to use a shared array or something similar to reduce network communications
 - Use a parameter for controlling number of smoothing iterations
 - Study Requires.jl and see if we can use a lazy load for python libraries
 
 ## Lar2Julia
-
-- The functions for the boundary computation need to be parallelized
 
 ## Model2Obj
 

@@ -28,8 +28,11 @@ This is an example of a valid JSON configuration file:
       "crop": List with values for images resizing (they can be extended or cropped),
       "noise_shape": A number which indicates the intensity of the denoising
                      filter (0 if you want to disable denoising),
-      "threshold": A number containing the chosen threshold for data
-
+      "threshold": A number indicating the chosen threshold for data
+      "threshold3d": A number indicating the chosen threshold for the
+                     three-dimensional filter (0 if you want to disable this filter)
+      "zDim": A number indicating the number of images computed at once from the
+              three-dimensional filter (0 if you want to take the entire stack)
     }
     
 For example we can write:
@@ -39,7 +42,9 @@ For example we can write:
         "outputDirectory": "/home/juser/OUTPUT/",
         "crop": [[1,800],[1,600],[1,50]],
         "noise_shape": 0,
-        "threshold": 8
+        "threshold": 8,
+        "threshold3d": 100,
+        "zDim":0
     }
 
 These are the accepted parameters:
@@ -51,6 +56,8 @@ These are the accepted parameters:
 - threshold: Set a threshold for raw data. Pixels under that threshold will be 
              set to black, otherwise they will be set to white. If threshold 
              is not specified, segmentation will be done using a clustering algorithm
+- threshold3d: set a threshold for the three-dimensional filter
+- zDim: set the number of images computed at once from the three-dimensional filter
 
 #### Data conversion
 

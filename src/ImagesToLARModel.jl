@@ -68,8 +68,21 @@ function loadConfigurationPrepareData(configurationFile)
   catch
   end
   
+  threshold3d = 0
+  try
+    threshold3d = configuration["threshold3d"]
+  catch
+  end
+  
+  zDim = 0
+  try
+    zDim = configuration["zDim"]
+  catch
+  end
+
+  
   return configuration["inputDirectory"], configuration["outputDirectory"],
-        crop, noise_shape, threshold
+        crop, noise_shape, threshold, threshold3d, zDim
 
 end
 
@@ -81,14 +94,17 @@ function prepareData(configurationFile)
   configurationFile: Path of the configuration file
   """
   inputPath, outputPath, crop,
-          noise_shape, threshold = loadConfigurationPrepareData(open(configurationFile))
+          noise_shape, threshold,
+          threshold3d, zDim = loadConfigurationPrepareData(open(configurationFile))
 
-  prepareData(inputPath, outputPath, crop, noise_shape, threshold)
+  prepareData(inputPath, outputPath, crop, noise_shape, 
+              threshold, threshold3d, zDim)
       
 end
 
 function prepareData(inputPath, outputPath,
-                       crop = Void, noise_shape = 0, threshold = Void)
+                       crop = Void, noise_shape = 0, threshold = Void,
+                       threshold3d = 0, zDim = 0)
   """
   Prepare the input data converting all files into png
   format with the desired resizing and denoising
@@ -100,6 +116,10 @@ function prepareData(inputPath, outputPath,
   noise_shape: The shape for image denoising
   threshold: Threshold for the raw data. All pixels under it
              will we set to black, otherwise they will be set to white
+  threshold3d: A number indicating the chosen threshold for
+               three-dimensional filter (0 if you want to disable this filter)
+  zDim: A number indicating the number of images computed at once from the
+        three-dimensional filter (0 if you want to take the entire stack)
   """
   # Create output directory
   try
@@ -107,7 +127,8 @@ function prepareData(inputPath, outputPath,
   catch
   end
 
-  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape, threshold)
+  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape,
+                                      threshold, threshold3d, zDim)
 end
 
 function convertImagesToLARModel(configurationFile)

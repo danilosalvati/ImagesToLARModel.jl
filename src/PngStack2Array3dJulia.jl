@@ -41,6 +41,7 @@ function resizeImage(image, crop)
   end
   return subim(image, crop[1][1]:crop[1][2], crop[2][1]:crop[2][2])
 end 
+
 function clusterImage(imArray)
   """
   Get a binary representation of an image returning
@@ -79,8 +80,181 @@ function clusterImage(imArray)
   return reshape(qnt, imageWidth, imageHeight)  
 end 
 
+function visitFromNode(node, adjacentRel, visited)
+  """
+  Visit a graph starting from a node using a DFS
+
+  node: the starting node
+  adjacentRel: a list where in position i there are all
+               adjacent nodes to i
+  visited: the visited nodes
+  """
+  toVisit = Array(Int, 0)
+  visitedNodes = Array(Int, 0)
+  push!(toVisit, node)
+  while (length(toVisit) != 0)
+    n = pop!(toVisit)
+    if !in(n, visited)
+      push!(visited, n)
+      push!(visitedNodes, n)
+      adj_list = adjacentRel[n]
+      for adj in adj_list
+        push!(toVisit, adj)
+      end
+    end
+  end
+  return visitedNodes
+end 
+
+function pixelIndex(x, y, z, nx, ny)
+  """
+  Given the coordinates of a pixel
+  of the image matrix return the index
+  of the linearized matrix
+  """
+  return x + nx * (y - 1) + nx * ny * (z - 1)
+end 
+
+function pixelCoords(ind, nx, ny)
+  """
+  Given the index of a pixel
+  returns the coordinates of the pixel
+  """
+
+  xCoord = (ind - 1) % nx + 1
+  yCoord = convert(Int, trunc((ind - 1) % (nx * ny)/ nx)) + 1
+  zCoord = convert(Int, trunc((ind - 1) / (nx * ny))) + 1
+
+  return xCoord, yCoord, zCoord
+end 
+
+function getAdjacentPixels(imageArray)
+  """
+  Find all adjacent pixels in the stack of images
+
+  imageArray: the array containing the images
+  
+  Returns a list containing list of adjacent pixels
+  """
+  
+  nx = size(imageArray[1])[1]
+  ny = size(imageArray[1])[2]
+  
+  PP = Array(Array{Int}, nx * ny * length(imageArray))
+  for(pixel in 1: (nx * ny * length(imageArray)))
+    PP[pixel] = Array(Int, 0)
+    xPixel, yPixel, zPixel = pixelCoords(pixel, nx, ny)
+    if(imageArray[zPixel][xPixel, yPixel] != 0x00)
+      # Querying adjacent pixels
+      for z in max(1, zPixel - 1) : min(zPixel + 1, length(imageArray))
+        for y in max(1, yPixel - 1) : min(yPixel + 1, nx)
+          for x in max(1, xPixel - 1) : min(xPixel + 1, ny)
+            if(x == xPixel || y == yPixel)
+              index = pixelIndex(x, y, z, nx, ny)
+              if(index != pixel && imageArray[z][x, y] != 0x00)
+                push!(PP[pixel], index)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return PP
+end 
+
+function filter3DProcessFunction(blockFiles, startBlock, endBlock, threshold)
+  """
+  Process function for the 3D filter.
+  It takes a single block and processes all files
+  on a single process
+  
+  blockFiles: The array of files of previous, current and next blocks
+  startBlock: Index of the first file of the current block
+  endBlock: Index of the last file of the current block
+  threshold: The threshold for data filtering
+  """
+  zDim = length(blockFiles)
+  imageArray = Array(Array{Uint8,2}, zDim)
+  for i in 1: zDim
+      img = imread(blockFiles[i])
+      imageArray[i] = raw(img)
+  end
+
+  # Now I can start navigation of the graph determined
+  # by these images
+  visited = Array(Int, 0)
+  nx = size(imageArray[1])[1]
+  ny = size(imageArray[1])[2]
+  PP = getAdjacentPixels(imageArray)
+  for i in 1: (zDim * nx * ny)
+    xPixel, yPixel, zPixel = pixelCoords(i, nx, ny)
+    if imageArray[zPixel][xPixel, yPixel]!= 0x00 && !in(i, visited)
+      visitedPixels = visitFromNode(i, PP, visited)
+      if length(visitedPixels) < threshold
+        for pixel in visitedPixels
+          x, y, z = pixelCoords(pixel, nx, ny)
+          imageArray[z][x, y] = 0x00
+        end
+      end
+    end
+  end
+  
+  # Now I can write the results on file
+  for i in startBlock: endBlock
+    imwrite(grayim(imageArray[i]), blockFiles[i])
+  end
+end 
+
+function imageFilter3D(imageDirectory, threshold, zDim = 0)
+  """
+  Implementation of a filter for a stack of images
+  It traverses a stack of images loading zDim images
+  at once finding the adjacent pixels. If the number of
+  adjacent pixels is less than a threshold, the pixels
+  will be deleted
+
+  imageDirectory: The directory containg the images
+  threshold: the minimum number of adjacent pixels for the result
+  zDim: the number of images to load at once
+  """
+  imageFiles = readdir(imageDirectory)
+  imageFiles = map((s) -> string(imageDirectory, s), imageFiles)
+
+  if zDim == 0
+    zDim = length(imageFiles)
+  end
+  
+  numberOfBlocks = convert(Int, trunc(length(imageFiles)/zDim))
+
+  if length(imageFiles) % zDim != 0
+    numberOfBlocks += 1
+  end
+  
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 1: numberOfBlocks
+    endBlock = min(zBlock * zDim, length(imageFiles))
+    startBlock = (zBlock - 1) * zDim + 1
+    startPrevBlock = max(startBlock - zDim, 1)
+    endNextBlock = min(endBlock + zDim, length(imageFiles))
+    blockFiles = imageFiles[startPrevBlock : endNextBlock]
+    
+    startBlockInd = startBlock - startPrevBlock + 1
+    endBlockInd  = startBlockInd + endBlock - startBlock
+    
+    task = @spawn filter3DProcessFunction(blockFiles, startBlockInd, endBlockInd, threshold)
+    push!(tasks, task)
+    
+  end
+  # Waiting for task completion
+  for task in tasks
+    wait(task)
+  end
+end  
+
 function convertImages(inputPath, outputPath,
-                       crop = Void, noise_shape_detect = 0, threshold = Void)
+                       crop = Void, noise_shape_detect = 0, threshold = Void,
+                       threshold3d = 0, zDim = 0)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
@@ -108,8 +282,8 @@ function convertImages(inputPath, outputPath,
       for i in 1 : crop[3][2] - numberOfImages
         imArray = zeros(Uint8, imageWidth, imageHeight)
         img = grayim(imArray)
-        outputFilename = string(outputPath, "/", imageFiles[end][1:rsearch(imageFiles[end], ".")[1]],
-                                "-added-", i ,".png")
+        outputFilename = string(outputPath, "/", imageFiles[end][1:rsearch(imageFiles[end], ".")[1] - 1],
+                                "_added-", i ,".png")
         imwrite(img, outputFilename)
       end 
     end
@@ -136,11 +310,15 @@ function convertImages(inputPath, outputPath,
       imArray = clusterImage(imArray)
     end
     gray_img = grayim(imArray) 
-    
+   
    outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")
    imwrite(gray_img, outputFilename)
 
   end
+  # Filtering out non-relevant parts of the model
+  if(threshold3d != 0)
+    imageFilter3D(outputPath, threshold3d, zDim)
+  end 
 end
 
 function getImageData(imageFile)

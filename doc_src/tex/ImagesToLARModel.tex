@@ -197,6 +197,8 @@ Data preparation (see Section~\ref{sec:dataPreparation} takes several parameters
  \item crop: Parameter for images resizing (they can be extended or cropped)
  \item noise\_shape: Intensity of the denoising filter for images (0 if you want to disable it)
  \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white. If threshold is not specified, segmentation will be done using a clustering algorithm
+ \item threshold3d: set a threshold for the three-dimensional filter (see Section~\ref{sec:3dfilter})
+ \item zDim: set the stack dimension for the three-dimensional filter (see Section~\ref{sec:3dfilter})
 \end{itemize}
 
 Because of their number it has been realized a function for simply loading them from a JSON configuration file; this is the code:
@@ -230,8 +232,21 @@ Because of their number it has been realized a function for simply loading them 
   catch
   end
   
+  threshold3d = 0
+  try
+    threshold3d = configuration["threshold3d"]
+  catch
+  end
+  
+  zDim = 0
+  try
+    zDim = configuration["zDim"]
+  catch
+  end
+
+  
   return configuration["inputDirectory"], configuration["outputDirectory"],
-        crop, noise_shape, threshold
+        crop, noise_shape, threshold, threshold3d, zDim
 
 end
 @}
@@ -246,6 +261,10 @@ A valid JSON file has the following structure:
 filter (0 if you want to disable denoising)\\
 \>  ``threshold": set a threshold for raw data. Pixels under that threshold \\
 will be set to black, otherwise they will be set to white\\
+\>  ``threshold3d": A number indicating the chosen threshold for the \\
+three-dimensional filter (0 if you want to disable this filter) \\
+\>  ``zDim": A number indicating the number of images computed \\
+at once from the three-dimensional filter (0 if you want to take the entire stack)
 \}\\
 \end{tabbing}
 
@@ -257,11 +276,13 @@ For example, we can write:
 \>  ``outputDirectory": ``/home/juser/OUTPUT/",\\
 \>  ``crop": [[1,800],[1,600],[1,50]],\\
 \>  ``noise\_shape": 0,\\
-\>  ``threshold": 13\\
+\>  ``threshold": 13,\\
+\>  ``threshold3d": 100,\\
+\>  ``zDim": 0\\
 \}\\
 \end{tabbing}
 
-\textit{crop}, \textit{noise\_shape}, and \textit{threshold} are optional parameters
+\textit{crop}, \textit{noise\_shape}, \textit{threshold}, \textit{threshold3d} and \textit{zDim} are optional parameters
 
 \subsection{Input loading for images conversion}\label{sec:input}
 
@@ -356,16 +377,19 @@ As we can see, in a valid JSON configuration file DEBUG\_LEVEL can be a number f
   configurationFile: Path of the configuration file
   """
   inputPath, outputPath, crop,
-	  noise_shape, threshold = loadConfigurationPrepareData(open(configurationFile))
+	  noise_shape, threshold,
+	  threshold3d, zDim = loadConfigurationPrepareData(open(configurationFile))
 
-  prepareData(inputPath, outputPath, crop, noise_shape, threshold)
+  prepareData(inputPath, outputPath, crop, noise_shape, 
+	      threshold, threshold3d, zDim)
       
 end
 @}
 
 @D manual data preparation
 @{function prepareData(inputPath, outputPath,
-		       crop = Void, noise_shape = 0, threshold = Void)
+		       crop = Void, noise_shape = 0, threshold = Void,
+		       threshold3d = 0, zDim = 0)
   """
   Prepare the input data converting all files into png
   format with the desired resizing and denoising
@@ -377,6 +401,10 @@ end
   noise_shape: The shape for image denoising
   threshold: Threshold for the raw data. All pixels under it
              will we set to black, otherwise they will be set to white
+  threshold3d: A number indicating the chosen threshold for
+	       three-dimensional filter (0 if you want to disable this filter)
+  zDim: A number indicating the number of images computed at once from the
+	three-dimensional filter (0 if you want to take the entire stack)
   """
   # Create output directory
   try
@@ -384,7 +412,8 @@ end
   catch
   end
 
-  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape, threshold)
+  PngStack2Array3dJulia.convertImages(inputPath, outputPath, crop, noise_shape,
+				      threshold, threshold3d, zDim)
 end
 @}
 
@@ -472,6 +501,8 @@ Conversion needs the following parameters:
  \item outputPath: path where we will save png images
  \item crop: parameters for images resizing (they can be extended or cropped)
  \item threshold: set a threshold for raw data. Pixels under that threshold will be set to black, otherwise they will be set to white. If the threshold is not set, the image will be converted using a clustering algorithm
+ \item threshold3d: Set a threshold for the three-dimensional filter (see Section~\ref{sec:3dfilter})
+ \item zDim: Set the stack dimension for the three-dimensional filter (see Section~\ref{sec:3dfilter})
 \end{itemize}
 
 Now we can examine single parts of conversion process. We need to open the single image doing the following operations:
@@ -528,13 +559,22 @@ else
 end
 gray_img = grayim(imArray) @}
 
+The code used for image clustering will be explained in Section~\ref{sec:imageClustering}. \\
 
-The code used for image clustering will be explained in Section~\ref{sec:imageClustering}. 
+After these operations we can write the single image on disk. However, the stack computed at the moment, could have non-relevant pixels for our model (especially if there is a lot of noise in images). So to speed-up next computation and produce a final result with better quality we can introduce a \textit{three-dimensional filter} for choosing only the useful pixels for the model. In Section~\ref{sec:3dfilter} we will see the details of the implementation of this filter.
+
+@D 3D filtering
+@{# Filtering out non-relevant parts of the model
+if(threshold3d != 0)
+  imageFilter3D(outputPath, threshold3d, zDim)
+end @}
+
 This is the code for the entire function:
 
 @D Convert to png
 @{function convertImages(inputPath, outputPath,
-                       crop = Void, noise_shape_detect = 0, threshold = Void)
+                       crop = Void, noise_shape_detect = 0, threshold = Void,
+                       threshold3d = 0, zDim = 0)
   """
   Get all images contained in inputPath directory
   saving them in outputPath directory in png format.
@@ -562,11 +602,12 @@ This is the code for the entire function:
     
     @< Reduce noise @>
     @< Image thresholding @>
-    
+   
    outputFilename = string(outputPath, imageFile[1:rsearch(imageFile, ".")[1]], "png")
    imwrite(gray_img, outputFilename)
 
   end
+  @< 3D filtering @>
 end
 @}
 
@@ -578,7 +619,6 @@ end
    \caption{Image transformation. (a) Original greyscale image (b) Denoised image (c) Two-colors image}
    \label{fig:imageTransformation}
 \end{figure}
-
 
 \subsubsection{Image resizing}\label{sec:imageResize}
 
@@ -639,8 +679,8 @@ if(crop!= Void)
     for i in 1 : crop[3][2] - numberOfImages
       imArray = zeros(Uint8, imageWidth, imageHeight)
       img = grayim(imArray)
-      outputFilename = string(outputPath, "/", imageFiles[end][1:rsearch(imageFiles[end], ".")[1]],
-			      "-added-", i ,".png")
+      outputFilename = string(outputPath, "/", imageFiles[end][1:rsearch(imageFiles[end], ".")[1] - 1],
+                              "_added-", i ,".png")
       imwrite(img, outputFilename)
     end 
   end
@@ -690,15 +730,244 @@ When the user does not set a threshold for data segmentation, the software uses 
   return reshape(qnt, imageWidth, imageHeight)  
 end @}
 
+We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This could happen when the images is completely empty or it has only colored pixels. So, we need to check this cases and fill the assignments array \texttt{qnt} with the right values based on a fixed threshold.
 
-We can see that sometimes the \texttt{Clustering.jl} library returns the same values for both centroid centers. This could happen when the images is completely empty or it has only colored pixels. So, we need to check this cases and fill the assignments array \texttt{qnt} with the right values based a fixed threshold.
+\subsubsection{three-dimensional model filter}\label{sec:3dfilter}
 
+Now we can see the implementation of a filter for removal of noise from our models.
+It is different from filters used in common image processing because it effectively removes only groups of linked pixels whose dimensions are under a given threshold. So this filter is able to consider the three-dimensional model described in our images to delete the non-relevant pixels.
+The main idea behind this filter is very simple. We assume that big groups of pixels which are directly linked are interesting for the final model; so we just need to navigate pixels (as they were nodes in a graph) that are adjacent and filter out only groups under the threshold at the end of the visit. We first need a simple function for a DFS of a graph:
+
+@D DFS function
+@{function visitFromNode(node, adjacentRel, visited)
+  """
+  Visit a graph starting from a node using a DFS
+
+  node: the starting node
+  adjacentRel: a list where in position i there are all
+	       adjacent nodes to i
+  visited: the visited nodes
+  """
+  toVisit = Array(Int, 0)
+  visitedNodes = Array(Int, 0)
+  push!(toVisit, node)
+  while (length(toVisit) != 0)
+    n = pop!(toVisit)
+    if !in(n, visited)
+      push!(visited, n)
+      push!(visitedNodes, n)
+      adj_list = adjacentRel[n]
+      for adj in adj_list
+        push!(toVisit, adj)
+      end
+    end
+  end
+  return visitedNodes
+end @}
+
+This is a function valid for every type of graph. What can change from an application to another is the \textit{adjacency condition}. In this case we can see that our function uses the \texttt{adjacentRel} parameter, which is a list where for every position \textit{i} there are all nodes that are adjacent to \textit{i}. The relationship of adjacency used in this case is trivial. In fact we assume that:
+\begin{quotation}
+\textit{Given a pixel with coordinates (xPixel, yPixel, zPixel) we consider only the following adjacent pixels:
+\begin{itemize}
+ \item z $\in$ [zPixel - 1, zPixel + 1]
+ \item coordinates = \{(xPixel - 1, yPixel, z), (xPixel + 1, yPixel, z), (xPixel, yPixel - 1, z), (xPixel, yPixel + 1, z)\}
+\end{itemize}
+}
+\end{quotation}
+
+\begin{figure}[htb]
+  \begin{center}
+    \includegraphics[width=0.60\linewidth]{images/PixelAdjacency.png}
+  \end{center}
+  \caption{Adjacency relationship for pixels. (a) A 2D view of the relationship. (b) A 3D view of the relationship (where the z-axis is determined by previous and next pictures in the array stack}
+  \label{fig:architecture}
+\end{figure}
+
+This is the function that implements the algorithm we have seen above
+
+@D find adjacent pixels
+@{function getAdjacentPixels(imageArray)
+  """
+  Find all adjacent pixels in the stack of images
+
+  imageArray: the array containing the images
+  
+  Returns a list containing list of adjacent pixels
+  """
+  
+  nx = size(imageArray[1])[1]
+  ny = size(imageArray[1])[2]
+  
+  PP = Array(Array{Int}, nx * ny * length(imageArray))
+  for(pixel in 1: (nx * ny * length(imageArray)))
+    PP[pixel] = Array(Int, 0)
+    xPixel, yPixel, zPixel = pixelCoords(pixel, nx, ny)
+    if(imageArray[zPixel][xPixel, yPixel] != 0x00)
+      # Querying adjacent pixels
+      for z in max(1, zPixel - 1) : min(zPixel + 1, length(imageArray))
+        for y in max(1, yPixel - 1) : min(yPixel + 1, nx)
+          for x in max(1, xPixel - 1) : min(xPixel + 1, ny)
+            if(x == xPixel || y == yPixel)
+              index = pixelIndex(x, y, z, nx, ny)
+              if(index != pixel && imageArray[z][x, y] != 0x00)
+                push!(PP[pixel], index)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return PP
+end @}
+
+How we can see, we also need to transform pixel coordinates into an index and vice versa. So we defined the following utility functions:
+
+@D pixel coordinates to index
+@{function pixelIndex(x, y, z, nx, ny)
+  """
+  Given the coordinates of a pixel
+  of the image matrix return the index
+  of the linearized matrix
+  """
+  return x + nx * (y - 1) + nx * ny * (z - 1)
+end @}
+
+@D pixel index to coordinates
+@{function pixelCoords(ind, nx, ny)
+  """
+  Given the index of a pixel
+  returns the coordinates of the pixel
+  """
+
+  xCoord = (ind - 1) % nx + 1
+  yCoord = convert(Int, trunc((ind - 1) % (nx * ny)/ nx)) + 1
+  zCoord = convert(Int, trunc((ind - 1) / (nx * ny))) + 1
+
+  return xCoord, yCoord, zCoord
+end @}
+
+\begin{figure}[htb]
+  \begin{center}
+    \includegraphics[width=0.25\linewidth]{images/PixelIndexing.png}
+  \end{center}
+  \caption{Enumerating schema used for pixel indexing.}
+  \label{fig:architecture}
+\end{figure}
+
+Now we can examine the main function for this filter. First of all, to reduce the quantity of memory involved in the process we must divide the number of images computed at once by a single process using a parameter called \texttt{zDim}. After block division we can start the function that will be executed on every process on the images of the previous, current and next blocks (saving only images for the current one). This is the code:
+
+@D 3D model filtering main function
+@{function imageFilter3D(imageDirectory, threshold, zDim = 0)
+  """
+  Implementation of a filter for a stack of images
+  It traverses a stack of images loading zDim images
+  at once finding the adjacent pixels. If the number of
+  adjacent pixels is less than a threshold, the pixels
+  will be deleted
+
+  imageDirectory: The directory containg the images
+  threshold: the minimum number of adjacent pixels for the result
+  zDim: the number of images to load at once
+  """
+  imageFiles = readdir(imageDirectory)
+  imageFiles = map((s) -> string(imageDirectory, s), imageFiles)
+
+  if zDim == 0
+    zDim = length(imageFiles)
+  end
+  
+  numberOfBlocks = convert(Int, trunc(length(imageFiles)/zDim))
+
+  if length(imageFiles) % zDim != 0
+    numberOfBlocks += 1
+  end
+  
+  tasks = Array(RemoteRef, 0)
+  for zBlock in 1: numberOfBlocks
+    endBlock = min(zBlock * zDim, length(imageFiles))
+    startBlock = (zBlock - 1) * zDim + 1
+    startPrevBlock = max(startBlock - zDim, 1)
+    endNextBlock = min(endBlock + zDim, length(imageFiles))
+    blockFiles = imageFiles[startPrevBlock : endNextBlock]
+    
+    startBlockInd = startBlock - startPrevBlock + 1
+    endBlockInd  = startBlockInd + endBlock - startBlock
+    
+    task = @@spawn filter3DProcessFunction(blockFiles, startBlockInd, endBlockInd, threshold)
+    push!(tasks, task)
+    
+  end
+  # Waiting for task completion
+  for task in tasks
+    wait(task)
+  end
+end @}
+
+Finally we can see the function executed in every process for images filtering. We just need to iterate on all pixels of the stack of images that are full and that have not been visited yet and start the DFS visit obtaining the list of visited pixels. If its length is less than the \texttt{threshold} parameter we set all those pixels to zero. After all pixels have been visited we can write the resulting images on disk
+
+@D process function for 3D filter
+@{function filter3DProcessFunction(blockFiles, startBlock, endBlock, threshold)
+  """
+  Process function for the 3D filter.
+  It takes a single block and processes all files
+  on a single process
+  
+  blockFiles: The array of files of previous, current and next blocks
+  startBlock: Index of the first file of the current block
+  endBlock: Index of the last file of the current block
+  threshold: The threshold for data filtering
+  """
+  zDim = length(blockFiles)
+  imageArray = Array(Array{Uint8,2}, zDim)
+  for i in 1: zDim
+      img = imread(blockFiles[i])
+      imageArray[i] = raw(img)
+  end
+
+  # Now I can start navigation of the graph determined
+  # by these images
+  visited = Array(Int, 0)
+  nx = size(imageArray[1])[1]
+  ny = size(imageArray[1])[2]
+  PP = getAdjacentPixels(imageArray)
+  for i in 1: (zDim * nx * ny)
+    xPixel, yPixel, zPixel = pixelCoords(i, nx, ny)
+    if imageArray[zPixel][xPixel, yPixel]!= 0x00 && !in(i, visited)
+      visitedPixels = visitFromNode(i, PP, visited)
+      if length(visitedPixels) < threshold
+        for pixel in visitedPixels
+          x, y, z = pixelCoords(pixel, nx, ny)
+          imageArray[z][x, y] = 0x00
+        end
+      end
+    end
+  end
+  
+  # Now I can write the results on file
+  for i in startBlock: endBlock
+    imwrite(grayim(imageArray[i]), blockFiles[i])
+  end
+end @}
+
+@D 3d model filtering
+@{@< DFS function @>
+
+@< pixel coordinates to index @>
+
+@< pixel index to coordinates @>
+
+@< find adjacent pixels @>
+
+@< process function for 3D filter @>
+
+@<3D model filtering main function @> @}
 
 \subsection{Getting data from a png}\label{sec:getData}
 
 Now we need to load information data from png images. In particular we are interested in getting width and height of an image. As stated in~\cite{W3CPNG} document, a standard PNG file contains a \textit{signature} followed by a sequence of \textit{chunks} (each one with a specific type).\\
 
-The signature always contain the following values:
+The signature always contains the following values:
 
 \begin{quote}
  137 80 78 71 13 10 26 10
@@ -3329,8 +3598,11 @@ end
 @{module PngStack2Array3dJulia
 
 @< modules import PngStack2Array3dJulia @>
-@<image resizing @>
-@<image clustering @>
+@< image resizing @>
+
+@< image clustering @>
+
+@< 3d model filtering @>
 
 @< Convert to png @>
 @< Get image data @>
