@@ -1948,7 +1948,7 @@ This module contains functions used in LAR library which are converted using Jul
 These are modules used for \texttt{Lar2Julia} and the public functions
 
 @D modules import Lar2Julia
-@{import JSON
+@{import JSON, LARUtils
 
 using Logging
 
@@ -2288,6 +2288,28 @@ end @}
 @< incidence operator @>
 
 @< oriented boundary operator @> @}
+
+\subsection{Compute the (d-1)-simplices from d-simplices}\label{sec:d-simplices}
+
+@D Compute (d-1)-simplices from d-simplices
+@{function larSimplexFacets(simplices)
+  """
+  Extract d-1 facets from d-simplices
+  
+  simplices: the list of simplices
+  """
+  
+  out = Set()
+  dim = length(simplices[1])
+  for simplex in simplices
+    for k in 1 : dim
+      toPush = sort(vcat(simplex[1: k - 1], simplex[k + 1 : dim]),
+                    lt = LARUtils.lessThanVertices)
+      push!(out, toPush)
+    end
+  end
+  return out
+end @}
 
 %===============================================================================
 \section{LARUtils}\label{sec:LARUtils}
@@ -2944,7 +2966,7 @@ As we will see in next subsection, for executing a smoothing algorithm we need t
    \label{fig:adjacents}
 \end{figure}
 
-Algorithm is very simple and exploit the following property: \textit{for triangular faces all vertices are linked together}. So, for every vertex \textit{v} in a face \textit{f}, we just have to add to \textit{VV[v]} all the vertices of \textit{f}.
+The algorithm we will use is simple and it is based on computation of \textit{EV} relationship for our model. In fact, with this relationship we automatically have vertices which are adjacent to a given one; so we just need to iterate on it saving found vertices into the \textit{VV} relationship
 
 @D get adjacent vertices
 @{function adjVerts(V, FV)
@@ -2957,16 +2979,19 @@ Algorithm is very simple and exploit the following property: \textit{for triangu
   Returns the list of indices of vertices adjacent
   to a vertex
   """
-  VV = Array(Array{Int},length(V))
-  for i in 1: length(FV)
-    for v in FV[i]
-      if(!isdefined(VV,v))
-        # Adding a new array for this vertex
-        VV[v] = Array{Int}[]
-      end
-      push!(VV[v], FV[i][1], FV[i][2], FV[i][3])
-      VV[v] = unique(VV[v])
+  EV = Lar2Julia.larSimplexFacets(FV)
+  VV = Array(Array{Int},length(V))  
+  for edge in EV
+    if !isdefined(VV, edge[1])
+      VV[edge[1]] = []
     end
+    
+    if !isdefined(VV, edge[2])
+      VV[edge[2]] = []
+    end
+    
+    push!(VV[edge[1]], edge[2])
+    push!(VV[edge[2]], edge[1])
   end
   return VV
 end @}
@@ -3005,27 +3030,15 @@ This is the code for the smoothing function; it takes a single LAR model and ret
 
   VV = adjVerts(V, FV)
   newV = Array(Array{Float64},0)
-  V_temp = Array(Array{Float64},0)
-
   for i in 1:length(VV)
     adjs = VV[i]
     # Get all coordinates for adjacent vertices
     coords = Array(Array{Float64}, 0)
     for v in adjs
       push!(coords, V[v])
-    end
-
-    # Computing sum of all vectors
-    sum = [0.0, 0.0, 0.0]
-    for v in coords
-      sum += v
-    end
-
-    # Computing convex combination of vertices
-    push!(newV, sum/length(adjs))
-
+    end    
+    push!(newV, Lar2Julia.convexCombination(coords))
   end
-
   return newV, FV
 end @}
 
@@ -3539,6 +3552,8 @@ end
 @< transform relationships to csc @>
 
 @< boundary computation @>
+
+@< Compute (d-1)-simplices from d-simplices @>
 end
 @}
 
@@ -3614,6 +3629,7 @@ end
 
 @O src/Smoother.jl
 @{module Smoother
+import Lar2Julia
 export smoothModel
 
 @< get adjacent vertices @>

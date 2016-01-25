@@ -1,6 +1,6 @@
 module Lar2Julia
 
-import JSON
+import JSON, LARUtils
 
 using Logging
 
@@ -287,4 +287,23 @@ function signedCellularBoundary(V, bases)
   transposedPairs = transpose(pairs)
   return sparse(map(((x)->return x[1]), pairs), map(((x)->return x[2]), pairs), signs)
 end  
+
+function larSimplexFacets(simplices)
+  """
+  Extract d-1 facets from d-simplices
+  
+  simplices: the list of simplices
+  """
+  
+  out = Set()
+  dim = length(simplices[1])
+  for simplex in simplices
+    for k in 1 : dim
+      toPush = sort(vcat(simplex[1: k - 1], simplex[k + 1 : dim]),
+                    lt = LARUtils.lessThanVertices)
+      push!(out, toPush)
+    end
+  end
+  return out
+end 
 end
