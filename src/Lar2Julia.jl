@@ -305,5 +305,22 @@ function larSimplexFacets(simplices)
     end
   end
   return out
+end
+
+function fromFacesToEdges(simplices)
+  """
+  Optimized function for extraction of
+  edges from simplicial faces
+  
+  simplices: the list of simplices
+  """
+  
+  out = Set()
+  for simplex in simplices
+    push!(out, [simplex[1],simplex[2]],
+               [simplex[1],simplex[3]],
+               [simplex[2],simplex[3]])
+  end
+  return out
 end 
 end

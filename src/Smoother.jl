@@ -12,7 +12,7 @@ function adjVerts(V, FV)
   Returns the list of indices of vertices adjacent
   to a vertex
   """
-  EV = Lar2Julia.larSimplexFacets(FV)
+  EV = Lar2Julia.fromFacesToEdges(FV)
   VV = Array(Array{Int},length(V))  
   for edge in EV
     if !isdefined(VV, edge[1])

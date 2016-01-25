@@ -2309,6 +2309,23 @@ end @}
     end
   end
   return out
+end
+
+function fromFacesToEdges(simplices)
+  """
+  Optimized function for extraction of
+  edges from simplicial faces
+  
+  simplices: the list of simplices
+  """
+  
+  out = Set()
+  for simplex in simplices
+    push!(out, [simplex[1],simplex[2]],
+               [simplex[1],simplex[3]],
+               [simplex[2],simplex[3]])
+  end
+  return out
 end @}
 
 %===============================================================================
@@ -2979,7 +2996,7 @@ The algorithm we will use is simple and it is based on computation of \textit{EV
   Returns the list of indices of vertices adjacent
   to a vertex
   """
-  EV = Lar2Julia.larSimplexFacets(FV)
+  EV = Lar2Julia.fromFacesToEdges(FV)
   VV = Array(Array{Int},length(V))  
   for edge in EV
     if !isdefined(VV, edge[1])
